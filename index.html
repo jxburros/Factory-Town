@@ -842,10 +842,13 @@ const gameState = {
   scene: 'HOME',
   shiftDone: false,
   weeklyPay: 0,
-  inventory: { bread: 1, coffee: 0, uniform: 0, bike: 0, bus_pass: 0 },
+  inventory: { bread: 1, coffee: 0, uniform: 0, bike: 0, bus_pass: 0, scrapMetal: 0, wire: 0, circuit: 0, toolbelt: 0, thermos: 0, energy_drink: 0 },
   travelMethod: 'walk',
   craftedToday: 0,
   totalCrafted: 0,
+  rentDebt: 0,
+  moneyEarnedToday: 0,
+  materialsBought: 0,
   factoryXP: 0,
   townXP: 0,
   npcs: [
@@ -862,9 +865,10 @@ const gameState = {
     { id: 'bus_pass', label: 'BUS PASS  (5min, $2)', cost: 15, type: 'travel' },
   ],
   craftItems: [
-    { id: 'bolt', label: 'BASIC BOLT', time: 15, energy: 8, pay: 10, minLv: 1 },
-    { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 20, minLv: 2 },
-    { id: 'motor', label: 'MOTOR', time: 40, energy: 22, pay: 38, minLv: 3 },
+    { id: 'bolt', label: 'BASIC BOLT', time: 15, energy: 8, pay: 12, minLv: 1, mat: { scrapMetal: 2 } },
+    { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 24, minLv: 1, mat: { scrapMetal: 3, wire: 1 } },
+    { id: 'motor', label: 'MOTOR', time: 40, energy: 22, pay: 45, minLv: 3, mat: { wire: 2, circuit: 1 } },
+    { id: 'processor', label: 'PROCESSOR', time: 50, energy: 28, pay: 65, minLv: 4, mat: { circuit: 2, wire: 1 } },
   ],
   travelOptions: [
     { id: 'walk', label: 'WALK  — 20 min, free', time: 20, cost: 0 },
@@ -910,6 +914,36 @@ const gameState = {
       status: 'available',
       goal: { type: 'factory_level', target: 2 },
       reward: { money: 50, xp: 0, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'material_girl',
+      title: 'Material Girl',
+      description: 'Purchase 10 crafting materials from the shop.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'materials_bought', target: 10 },
+      reward: { money: 20, xp: 20, rep: 0.2 },
+      progress: 0,
+    },
+    {
+      id: 'in_the_black',
+      title: 'In the Black',
+      description: 'End a day with more than $100 after paying rent.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'money_after_rent', target: 1 },
+      reward: { money: 30, xp: 25, rep: 0.3 },
+      progress: 0,
+    },
+    {
+      id: 'tooled_up',
+      title: 'Tooled Up',
+      description: 'Own both the Toolbelt and the Thermos.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'own_items', items: ['toolbelt', 'thermos'], target: 1 },
+      reward: { money: 25, xp: 15, rep: 0.2 },
       progress: 0,
     },
   ],
@@ -1273,10 +1307,12 @@ function interact() {
   } else if (a === 'fridge') {
     const opts = [];
     if (gameState.inventory.bread > 0) opts.push(`Eat bread (${gameState.inventory.bread} left)  +40 hunger`);
+    if (gameState.inventory.energy_drink > 0) opts.push(`Use energy drink (${gameState.inventory.energy_drink} left)  +50 energy`);
     opts.push('Buy bread  $4  +40 hunger', 'Cancel');
     modal('FRIDGE', 'What would you like?', opts, i => {
       if (opts[i]?.startsWith('Buy') && pay(4)) { gameState.hunger = cap(gameState.hunger + 40); log('Bought and ate bread.', 'g'); }
       else if (opts[i]?.startsWith('Eat') && gameState.inventory.bread > 0) { gameState.inventory.bread--; gameState.hunger = cap(gameState.hunger + 40); log('Ate bread from fridge.', 'g'); }
+      else if (opts[i]?.startsWith('Use energy drink') && gameState.inventory.energy_drink > 0) { gameState.inventory.energy_drink--; gameState.energy = cap(gameState.energy + 50); log('Used energy drink! +50 energy.', 'g'); }
     });
   } else if (a === 'stove') {
     modal('STOVE', 'Cook a home meal?', ['Cook meal  +50 hunger  (15 min)', 'Cancel'], i => {
@@ -1317,7 +1353,14 @@ function interact() {
       else if (i === 1) { gameState.time += 10; log('Nice walk through the park.', 'g'); }
     });
   } else if (a === 'storage') {
-    modal('STORAGE', `Bread: ${gameState.inventory.bread || 0}   Coffee: ${gameState.inventory.coffee || 0}\nUniform: ${gameState.inventory.uniform || 0}   Bike: ${gameState.inventory.bike || 0}\nBus Pass: ${gameState.inventory.bus_pass || 0}`, ['Close'], []);
+    const inv = gameState.inventory;
+    const storOpts = [];
+    if (inv.energy_drink > 0) storOpts.push(`Use energy drink (${inv.energy_drink})  +50 energy`);
+    storOpts.push('Close');
+    const storDesc = `Bread: ${inv.bread || 0}   Energy Drink: ${inv.energy_drink || 0}\nScrap Metal: ${inv.scrapMetal || 0}   Wire: ${inv.wire || 0}   Circuit: ${inv.circuit || 0}\nUniform: ${inv.uniform ? 'Y' : 'N'}   Bike: ${inv.bike ? 'Y' : 'N'}   Bus Pass: ${inv.bus_pass ? 'Y' : 'N'}\nToolbelt: ${inv.toolbelt ? 'Y' : 'N'}   Thermos: ${inv.thermos ? 'Y' : 'N'}`;
+    modal('STORAGE', storDesc, storOpts, i => {
+      if (storOpts[i]?.startsWith('Use energy drink') && inv.energy_drink > 0) { inv.energy_drink--; gameState.energy = cap(gameState.energy + 50); log('Used energy drink! +50 energy.', 'g'); }
+    });
   } else if (a === 'upgrade') {
     doUpgrade();
   } else if (a === 'craft') {
@@ -1358,17 +1401,51 @@ function doTravel(opt, scene, px, py) {
   }
 }
 
+function getCraftEnergy(c) {
+  return gameState.inventory.toolbelt ? Math.floor(c.energy * 0.8) : c.energy;
+}
+
+function getMissingMats(c) {
+  const missing = [];
+  const inv = gameState.inventory;
+  if (!c.mat) return missing;
+  if (c.mat.scrapMetal && (inv.scrapMetal || 0) < c.mat.scrapMetal)
+    missing.push(`${c.mat.scrapMetal - (inv.scrapMetal || 0)} more Scrap Metal`);
+  if (c.mat.wire && (inv.wire || 0) < c.mat.wire)
+    missing.push(`${c.mat.wire - (inv.wire || 0)} more Wire`);
+  if (c.mat.circuit && (inv.circuit || 0) < c.mat.circuit)
+    missing.push(`${c.mat.circuit - (inv.circuit || 0)} more Circuit`);
+  return missing;
+}
+
+function matLabel(mat) {
+  if (!mat) return '';
+  return ' [' + Object.entries(mat).map(([k, v]) => `${v}x ${k === 'scrapMetal' ? 'Scrap' : k === 'wire' ? 'Wire' : 'Circuit'}`).join(', ') + ']';
+}
+
 function doCraft() {
   if (!gameState.tasks.every(t => t)) { log('You must finish all 3 tasks before crafting!', 'w'); return; }
   const avail = gameState.craftItems.filter(c => c.minLv <= gameState.factoryLv);
   if (!avail.length) { log('No craft recipes available yet.', 'w'); return; }
-  modal('CRAFT STATION', 'Choose what to make:', [...avail.map(c => `${c.label}  +$${c.pay}  (${c.time} min, -${c.energy} energy)`), 'Cancel'], i => {
+  modal('CRAFT STATION', 'Choose what to make:', [...avail.map(c => {
+    const e = getCraftEnergy(c);
+    return `${c.label}  +$${c.pay}  (${c.time}min, -${e}en)${matLabel(c.mat)}`;
+  }), 'Cancel'], i => {
     if (i >= avail.length) return;
     const c = avail[i];
-    if (gameState.energy < c.energy) { log('Too tired to craft that right now.', 'w'); return; }
+    const e = getCraftEnergy(c);
+    const missing = getMissingMats(c);
+    if (missing.length) { log('Need: ' + missing.join(', '), 'b'); return; }
+    if (gameState.energy < e) { log('Too tired to craft that right now.', 'w'); return; }
+    if (c.mat) {
+      if (c.mat.scrapMetal) gameState.inventory.scrapMetal -= c.mat.scrapMetal;
+      if (c.mat.wire) gameState.inventory.wire -= c.mat.wire;
+      if (c.mat.circuit) gameState.inventory.circuit -= c.mat.circuit;
+    }
     gameState.time += c.time;
-    gameState.energy = Math.max(0, gameState.energy - c.energy);
+    gameState.energy = Math.max(0, gameState.energy - e);
     gameState.money += c.pay;
+    gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + c.pay;
     gameState.factoryXP += c.pay;
     gameState.craftedToday++;
     gameState.totalCrafted++;
@@ -1394,14 +1471,76 @@ function doUpgrade() {
 }
 
 function doShop() {
-  const opts = [...gameState.shopItems.map(s => `${s.label}  —  $${s.cost}${gameState.inventory[s.id] ? ' ✓ owned' : ''}`), 'Leave'];
-  modal('GENERAL SHOP', 'Buy supplies:', opts, i => {
-    if (i >= gameState.shopItems.length) return;
-    const s = gameState.shopItems[i];
-    if (!pay(s.cost)) return;
-    if (s.id === 'bread') { gameState.inventory.bread = (gameState.inventory.bread || 0) + 1; log('Bought bread.', 'g'); }
-    else if (s.id === 'coffee') { gameState.energy = cap(gameState.energy + 30); log('Drank coffee — energized!', 'g'); }
-    else { gameState.inventory[s.id] = 1; log('Purchased: ' + s.label, 'g'); }
+  modal('GENERAL SHOP', 'What are you looking for?',
+    ['Food & Consumables', 'Equipment', 'Materials', 'Leave'],
+    i => {
+      if (i === 0) doShopFood();
+      else if (i === 1) doShopEquip();
+      else if (i === 2) doShopMaterials();
+    }
+  );
+}
+
+function doShopFood() {
+  const inv = gameState.inventory;
+  const items = [
+    { label: `BREAD         $4   +40 hunger  (have: ${inv.bread || 0})`, fn: () => { if (pay(4)) { inv.bread = (inv.bread || 0) + 1; log('Bought bread. +40 hunger when eaten.', 'g'); } } },
+    { label: 'COFFEE        $3   +30 energy (immediate)', fn: () => { if (pay(3)) { gameState.energy = cap(gameState.energy + 30); log('Drank coffee \u2014 energized!', 'g'); } } },
+    { label: 'HOT MEAL      $8   +70 hunger +20 energy', fn: () => { if (pay(8)) { gameState.hunger = cap(gameState.hunger + 70); gameState.energy = cap(gameState.energy + 20); log('Had a hot meal. Feeling good!', 'g'); } } },
+    { label: `ENERGY DRINK  $6   +50 energy  (have: ${inv.energy_drink || 0})`, fn: () => { if (pay(6)) { inv.energy_drink = (inv.energy_drink || 0) + 1; log('Bought energy drink. Use from inventory.', 'g'); } } },
+  ];
+  modal('FOOD & CONSUMABLES', 'Buy food and drinks:', [...items.map(it => it.label), 'Back', 'Leave Shop'], i => {
+    if (i < items.length) { items[i].fn(); doShopFood(); }
+    else if (i === items.length) doShop();
+  });
+}
+
+function doShopEquip() {
+  const inv = gameState.inventory;
+  const items = [
+    { id: 'uniform',  label: `UNIFORM   $20  +10% pay`,     cost: 20 },
+    { id: 'bike',     label: `BIKE      $35  10min travel`,  cost: 35 },
+    { id: 'bus_pass', label: `BUS PASS  $15  5min, $2/trip`, cost: 15 },
+    { id: 'toolbelt', label: `TOOLBELT  $45  -20% craft energy`, cost: 45 },
+    { id: 'thermos',  label: `THERMOS   $25  -15% energy drain`, cost: 25 },
+  ];
+  modal('EQUIPMENT', 'One-time purchases:', [...items.map(it => it.label + (inv[it.id] ? '  \u2713 OWNED' : '')), 'Back', 'Leave Shop'], i => {
+    if (i < items.length) {
+      const it = items[i];
+      if (inv[it.id]) { log('You already own: ' + it.id + '.', 'w'); }
+      else if (pay(it.cost)) { inv[it.id] = 1; log('Purchased: ' + it.label + '.', 'g'); checkQuest('tooled_up'); }
+      doShopEquip();
+    } else if (i === items.length) doShop();
+  });
+}
+
+function doShopMaterials() {
+  const inv = gameState.inventory;
+  function buyMat(key, qty, cost) {
+    if (pay(cost)) {
+      inv[key] = (inv[key] || 0) + qty;
+      gameState.materialsBought = (gameState.materialsBought || 0) + qty;
+      log(`Bought ${qty}x ${key === 'scrapMetal' ? 'Scrap Metal' : key === 'wire' ? 'Wire' : 'Circuit'}.`, 'g');
+      checkQuest('material_girl');
+    }
+    doShopMaterials();
+  }
+  const desc = `Scrap Metal: ${inv.scrapMetal || 0}   Wire: ${inv.wire || 0}   Circuit: ${inv.circuit || 0}`;
+  modal('MATERIALS', desc, [
+    `SCRAP METAL  $3   (have: ${inv.scrapMetal || 0})  Buy 1`,
+    `SCRAP METAL  $15  Buy 5`,
+    `WIRE         $5   (have: ${inv.wire || 0})  Buy 1`,
+    `WIRE         $15  Buy 3`,
+    `CIRCUIT      $12  (have: ${inv.circuit || 0})  Buy 1`,
+    'Back',
+    'Leave Shop',
+  ], i => {
+    if (i === 0) buyMat('scrapMetal', 1, 3);
+    else if (i === 1) buyMat('scrapMetal', 5, 15);
+    else if (i === 2) buyMat('wire', 1, 5);
+    else if (i === 3) buyMat('wire', 3, 15);
+    else if (i === 4) buyMat('circuit', 1, 12);
+    else if (i === 5) doShop();
   });
 }
 
@@ -1422,19 +1561,61 @@ function talkNPC(n) {
 }
 
 function doSleep() {
-  gameState.time = 6 * 60;
-  gameState.energy = Math.min(100, gameState.energy + 65);
-  gameState.tasks = [false, false, false];
-  gameState.arrivedToday = false;
-  gameState.shiftDone = false;
-  gameState.craftedToday = 0;
-  gameState.dayOver = false;
-  gameState.day++;
-  gameState.hunger = Math.max(gameState.hunger - 10, 20);
-  if (gameState.hunger < 30) log('You woke up hungry. Find food soon!', 'w');
-  log(`Day ${gameState.day} begins — ${DAYS[(gameState.day - 1) % 7]}. Get to the factory by 9:00 AM!`, 'g');
-  changeScene('HOME', 96, 120);
-  saveGame();
+  const earned = gameState.moneyEarnedToday || 0;
+  const crafted = gameState.craftedToday;
+  const tasksDone = gameState.tasks.filter(t => t).length;
+  const hungerAtSleep = Math.round(gameState.hunger);
+  const energyAtSleep = Math.round(gameState.energy);
+  const canPayRent = gameState.money >= 10;
+  const netDay = canPayRent ? earned - 10 : earned;
+
+  let flavor;
+  if (tasksDone === 3 && crafted > 0) flavor = 'Productive day! Keep it up.';
+  else if (tasksDone === 3) flavor = 'Solid shift. Try crafting tomorrow.';
+  else if (gameState.money < 15) flavor = 'Tight budget. Buy materials\nbefore your next shift.';
+  else flavor = 'Rough day. The factory needs you.';
+
+  const desc = [
+    `Money earned today: $${earned}`,
+    `Items crafted:      ${crafted}`,
+    `Rent paid: ${canPayRent ? '-$10' : '\u26a0 UNPAID'}`,
+    `Net for the day:    $${netDay}`,
+    `Hunger at sleep:    ${hungerAtSleep}%`,
+    `Energy at sleep:    ${energyAtSleep}%`,
+    ``,
+    flavor,
+  ].join('\n');
+
+  modal(`DAY ${gameState.day} SUMMARY`, desc, ['Start New Day'], () => {
+    if (canPayRent) {
+      gameState.money -= 10;
+      if (gameState.rentDebt > 0) { gameState.rentDebt = 0; }
+      log('Rent paid: -$10.', 'g');
+    } else {
+      gameState.rentDebt = (gameState.rentDebt || 0) + 1;
+      log('\u26a0 Couldn\'t pay rent \u2014 debt noted.', 'b');
+      if (gameState.rentDebt >= 3) {
+        log('\u26a0 3 days overdue \u2014 reputation hit!', 'b');
+        gameState.rep = Math.max(0, gameState.rep - 1);
+      }
+    }
+    if (gameState.money > 100) checkQuest('in_the_black');
+    gameState.time = 6 * 60;
+    gameState.energy = Math.min(100, gameState.energy + 65);
+    gameState.tasks = [false, false, false];
+    gameState.arrivedToday = false;
+    gameState.shiftDone = false;
+    gameState.craftedToday = 0;
+    gameState.moneyEarnedToday = 0;
+    gameState.dayOver = false;
+    gameState._warnedLate = false;
+    gameState.day++;
+    gameState.hunger = Math.max(gameState.hunger - 10, 20);
+    if (gameState.hunger < 30) log('You woke up hungry. Find food soon!', 'w');
+    log(`Day ${gameState.day} begins \u2014 ${DAYS[(gameState.day - 1) % 7]}. Get to the factory by 9:00 AM!`, 'g');
+    changeScene('HOME', 96, 120);
+    saveGame();
+  });
 }
 
 function endShift(complete) {
@@ -1445,6 +1626,7 @@ function endShift(complete) {
   if (gameState.inventory.uniform) p = Math.round(p * 1.1);
   gameState.money += p;
   gameState.weeklyPay += p;
+  gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + p;
   if (complete) log(`Shift complete. Earned $${p}  (tasks: ${done}/3, crafts: ${gameState.craftedToday}).`, 'g');
   checkFactoryLv();
 }
@@ -1470,7 +1652,8 @@ function passive() {
   passiveTick = 0;
   gameState.time++;
   gameState.hunger = Math.max(0, gameState.hunger - 0.4);
-  gameState.energy = Math.max(0, gameState.energy - 0.15);
+  const energyDrain = gameState.inventory.thermos ? 0.15 * 0.85 : 0.15;
+  gameState.energy = Math.max(0, gameState.energy - energyDrain);
   if (gameState.scene === 'STREET' && !gameState.clothed) {
     log('POLICE ARREST! Public indecency — $30 fine, 1 hour detention.', 'b');
     gameState.money = Math.max(0, gameState.money - 30);
@@ -1581,7 +1764,31 @@ function log(msg, t = '') {
 
 // ── GLOBAL ────────────────────────────────────────────────────────────────
 window.showInventory = () => {
-  modal('INVENTORY', Object.entries(gameState.inventory).map(([k, v]) => `${k.padEnd(10, ' ')}: ${v}`).join('\n'), ['Close'], []);
+  const inv = gameState.inventory;
+  const lines = [
+    `BREAD        : ${inv.bread || 0}`,
+    `ENERGY DRINK : ${inv.energy_drink || 0}`,
+    ``,
+    `SCRAP METAL  : ${inv.scrapMetal || 0}`,
+    `WIRE         : ${inv.wire || 0}`,
+    `CIRCUIT      : ${inv.circuit || 0}`,
+    ``,
+    `UNIFORM      : ${inv.uniform ? 'YES' : 'NO'}`,
+    `BIKE         : ${inv.bike ? 'YES' : 'NO'}`,
+    `BUS PASS     : ${inv.bus_pass ? 'YES' : 'NO'}`,
+    `TOOLBELT     : ${inv.toolbelt ? 'YES' : 'NO'}`,
+    `THERMOS      : ${inv.thermos ? 'YES' : 'NO'}`,
+  ].join('\n');
+  const opts = [];
+  if (inv.energy_drink > 0) opts.push(`Use Energy Drink  (+50 energy)`);
+  opts.push('Close');
+  modal('INVENTORY', lines, opts, i => {
+    if (opts[i] && opts[i].startsWith('Use Energy Drink') && inv.energy_drink > 0) {
+      inv.energy_drink--;
+      gameState.energy = cap(gameState.energy + 50);
+      log('Used energy drink! +50 energy.', 'g');
+    }
+  });
 };
 window.showStatus = () => {
   modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
@@ -1605,8 +1812,25 @@ function applyLoad(raw) {
   try {
     const data = JSON.parse(raw);
     Object.assign(gameState, data.gameState);
-    if (!gameState.quests) gameState.quests = JSON.parse(JSON.stringify(gameState.quests || []));
+    if (!gameState.quests) gameState.quests = [];
     if (gameState.totalCrafted === undefined) gameState.totalCrafted = 0;
+    if (gameState.rentDebt === undefined) gameState.rentDebt = 0;
+    if (gameState.moneyEarnedToday === undefined) gameState.moneyEarnedToday = 0;
+    if (gameState.materialsBought === undefined) gameState.materialsBought = 0;
+    const inv = gameState.inventory;
+    if (inv.scrapMetal === undefined) inv.scrapMetal = 0;
+    if (inv.wire === undefined) inv.wire = 0;
+    if (inv.circuit === undefined) inv.circuit = 0;
+    if (inv.toolbelt === undefined) inv.toolbelt = 0;
+    if (inv.thermos === undefined) inv.thermos = 0;
+    if (inv.energy_drink === undefined) inv.energy_drink = 0;
+    // Inject any new quests missing from old saves
+    const newQuests = [
+      { id: 'material_girl', title: 'Material Girl', description: 'Purchase 10 crafting materials from the shop.', type: 'side', status: 'available', goal: { type: 'materials_bought', target: 10 }, reward: { money: 20, xp: 20, rep: 0.2 }, progress: 0 },
+      { id: 'in_the_black', title: 'In the Black', description: 'End a day with more than $100 after paying rent.', type: 'progression', status: 'available', goal: { type: 'money_after_rent', target: 1 }, reward: { money: 30, xp: 25, rep: 0.3 }, progress: 0 },
+      { id: 'tooled_up', title: 'Tooled Up', description: 'Own both the Toolbelt and the Thermos.', type: 'side', status: 'available', goal: { type: 'own_items', items: ['toolbelt', 'thermos'], target: 1 }, reward: { money: 25, xp: 15, rep: 0.2 }, progress: 0 },
+    ];
+    newQuests.forEach(nq => { if (!gameState.quests.find(q => q.id === nq.id)) gameState.quests.push(nq); });
     const px = data.playerPos ? data.playerPos.x : player.x;
     const py = data.playerPos ? data.playerPos.y : player.y;
     if (data.playerPos) player.facing = data.playerPos.facing || 2;
@@ -1637,6 +1861,9 @@ function checkQuest(questId) {
   else if (q.goal.type === 'friends') progress = gameState.npcs.filter(n => (n.friendship || 0) >= 1).length;
   else if (q.goal.type === 'total_crafted') progress = gameState.totalCrafted;
   else if (q.goal.type === 'factory_level') progress = gameState.factoryLv;
+  else if (q.goal.type === 'materials_bought') progress = gameState.materialsBought || 0;
+  else if (q.goal.type === 'money_after_rent') progress = gameState.money > 100 ? 1 : 0;
+  else if (q.goal.type === 'own_items') progress = (q.goal.items || []).every(id => gameState.inventory[id]) ? 1 : 0;
   q.progress = progress;
   if (progress >= q.goal.target) completeQuest(q);
 }
