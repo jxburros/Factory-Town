@@ -256,6 +256,9 @@ canvas {
   <div style="display:flex;gap:5px;flex-direction:column;">
     <button class="mb" style="font-size:6px;padding:5px 10px;" onclick="showInventory()">INVENTORY</button>
     <button class="mb" style="font-size:6px;padding:5px 10px;" onclick="showStatus()">STATUS</button>
+    <button class="mb" style="font-size:6px;padding:5px 10px;" onclick="showQuests()">QUESTS</button>
+    <button class="mb" style="font-size:6px;padding:5px 10px;" onclick="saveGame()">SAVE GAME</button>
+    <button class="mb" style="font-size:6px;padding:5px 10px;" onclick="promptLoadGame()">LOAD GAME</button>
   </div>
 </div>
 </div>
@@ -842,6 +845,7 @@ const gameState = {
   inventory: { bread: 1, coffee: 0, uniform: 0, bike: 0, bus_pass: 0 },
   travelMethod: 'walk',
   craftedToday: 0,
+  totalCrafted: 0,
   factoryXP: 0,
   townXP: 0,
   npcs: [
@@ -866,6 +870,48 @@ const gameState = {
     { id: 'walk', label: 'WALK  — 20 min, free', time: 20, cost: 0 },
     { id: 'bike', label: 'BIKE  — 10 min, free', time: 10, cost: 0, requires: 'bike' },
     { id: 'bus', label: 'BUS  — 5 min, $2', time: 5, cost: 2, requires: 'bus_pass' },
+  ],
+  quests: [
+    {
+      id: 'first_day',
+      title: 'First Day on the Job',
+      description: 'Complete all 3 tasks on your first day at the factory.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'tasks_completed', target: 3 },
+      reward: { money: 25, xp: 30, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'getting_to_know',
+      title: 'Getting to Know You',
+      description: 'Befriend 2 different NPCs in town.',
+      type: 'relationship',
+      status: 'available',
+      goal: { type: 'friends', target: 2 },
+      reward: { money: 15, xp: 0, rep: 1 },
+      progress: 0,
+    },
+    {
+      id: 'productive_worker',
+      title: 'Productive Worker',
+      description: 'Craft 5 items total across any number of days.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'total_crafted', target: 5 },
+      reward: { money: 40, xp: 50, rep: 0.3 },
+      progress: 0,
+    },
+    {
+      id: 'upgrade_ready',
+      title: 'Upgrade Ready',
+      description: 'Upgrade the factory to Level 2.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'factory_level', target: 2 },
+      reward: { money: 50, xp: 0, rep: 0.5 },
+      progress: 0,
+    },
   ],
 };
 
@@ -1285,7 +1331,7 @@ function interact() {
     gameState.factoryXP += 5;
     log('Task complete: ' + gameState.taskNames[idx] + ' ✓', 'g');
     checkFactoryLv();
-    if (gameState.tasks.every(t => t)) log('All 3 tasks done! Head to the Craft Station.', 'g');
+    if (gameState.tasks.every(t => t)) { log('All 3 tasks done! Head to the Craft Station.', 'g'); checkQuest('first_day'); }
   }
 }
 
@@ -1325,8 +1371,10 @@ function doCraft() {
     gameState.money += c.pay;
     gameState.factoryXP += c.pay;
     gameState.craftedToday++;
+    gameState.totalCrafted++;
     log(`Crafted: ${c.label}  +$${c.pay}`, 'g');
     checkFactoryLv();
+    checkQuest('productive_worker');
   });
 }
 
@@ -1340,6 +1388,7 @@ function doUpgrade() {
       gameState.factoryXP = 0;
       if (gameState.townLv < gameState.factoryLv) gameState.townLv = Math.min(gameState.factoryLv, 5);
       log(`Factory upgraded to Level ${gameState.factoryLv}! The town grows.`, 'g');
+      checkQuest('upgrade_ready');
     }
   });
 }
@@ -1367,6 +1416,7 @@ function talkNPC(n) {
       n.friendship = (n.friendship || 0) + 1;
       gameState.rep = Math.min(5, gameState.rep + 0.2);
       log(`+1 friendship with ${n.name}.`, 'g');
+      checkQuest('getting_to_know');
     }
   });
 }
@@ -1384,6 +1434,7 @@ function doSleep() {
   if (gameState.hunger < 30) log('You woke up hungry. Find food soon!', 'w');
   log(`Day ${gameState.day} begins — ${DAYS[(gameState.day - 1) % 7]}. Get to the factory by 9:00 AM!`, 'g');
   changeScene('HOME', 96, 120);
+  saveGame();
 }
 
 function endShift(complete) {
@@ -1536,6 +1587,103 @@ window.showStatus = () => {
   modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
 };
 
+// ── SAVE / LOAD ───────────────────────────────────────────────────────────
+function saveGame() {
+  try {
+    const data = {
+      gameState: JSON.parse(JSON.stringify(gameState)),
+      playerPos: { x: player.x, y: player.y, facing: player.facing },
+    };
+    localStorage.setItem('factorytown_save', JSON.stringify(data));
+    log('Game saved.', 'g');
+  } catch (e) {
+    log('Save failed.', 'b');
+  }
+}
+
+function applyLoad(raw) {
+  try {
+    const data = JSON.parse(raw);
+    Object.assign(gameState, data.gameState);
+    if (!gameState.quests) gameState.quests = JSON.parse(JSON.stringify(gameState.quests || []));
+    if (gameState.totalCrafted === undefined) gameState.totalCrafted = 0;
+    const px = data.playerPos ? data.playerPos.x : player.x;
+    const py = data.playerPos ? data.playerPos.y : player.y;
+    if (data.playerPos) player.facing = data.playerPos.facing || 2;
+    changeScene(gameState.scene, px, py);
+    updateHUD();
+    log('Game loaded.', 'g');
+    return true;
+  } catch (e) {
+    log('Failed to load save.', 'b');
+    return false;
+  }
+}
+
+window.promptLoadGame = () => {
+  const raw = localStorage.getItem('factorytown_save');
+  if (!raw) { log('No save file found.', 'w'); return; }
+  modal('LOAD GAME', 'Load saved game?\nUnsaved progress will be lost.', ['Load', 'Cancel'], i => {
+    if (i === 0) applyLoad(raw);
+  });
+};
+
+// ── QUESTS ────────────────────────────────────────────────────────────────
+function checkQuest(questId) {
+  const q = (gameState.quests || []).find(q => q.id === questId);
+  if (!q || q.status === 'complete') return;
+  let progress = 0;
+  if (q.goal.type === 'tasks_completed') progress = gameState.tasks.filter(t => t).length;
+  else if (q.goal.type === 'friends') progress = gameState.npcs.filter(n => (n.friendship || 0) >= 1).length;
+  else if (q.goal.type === 'total_crafted') progress = gameState.totalCrafted;
+  else if (q.goal.type === 'factory_level') progress = gameState.factoryLv;
+  q.progress = progress;
+  if (progress >= q.goal.target) completeQuest(q);
+}
+
+function completeQuest(q) {
+  q.status = 'complete';
+  gameState.money += q.reward.money;
+  gameState.factoryXP += q.reward.xp;
+  gameState.rep = Math.min(5, gameState.rep + q.reward.rep);
+  log(`QUEST COMPLETE: ${q.title} — Reward: $${q.reward.money}`, 'w');
+}
+
+window.showQuests = () => {
+  const visible = (gameState.quests || []).filter(q => q.status !== 'locked');
+  document.getElementById('mt').textContent = 'QUEST LOG';
+  const done = visible.filter(q => q.status === 'complete').length;
+  document.getElementById('md').textContent = `${done} / ${visible.length} completed`;
+  const ch = document.getElementById('mc');
+  ch.innerHTML = '';
+  if (!visible.length) {
+    const msg = document.createElement('p');
+    msg.style.cssText = 'color:#8899cc;font-size:7px;text-align:center;margin:8px 0';
+    msg.textContent = 'No quests available yet.';
+    ch.appendChild(msg);
+  }
+  visible.forEach(q => {
+    const b = document.createElement('button');
+    b.className = 'mb';
+    b.style.cursor = 'default';
+    const col = q.status === 'complete' ? '#44ff88' : q.status === 'active' ? '#00ffcc' : '#ffcc44';
+    const badge = q.status === 'complete' ? 'COMPLETE' : q.status === 'active' ? 'ACTIVE' : 'AVAILABLE';
+    b.innerHTML =
+      `<span style="color:${col}">[${badge}]</span> ${q.title}` +
+      `<br><span style="color:#8899cc;font-size:6px">${q.description}</span>` +
+      `<br><span style="color:#44cc88;font-size:6px">$${q.reward.money} | ${q.reward.xp} XP | +${q.reward.rep} rep</span>`;
+    b.onclick = e => e.stopPropagation();
+    ch.appendChild(b);
+  });
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'mb';
+  closeBtn.textContent = 'Close';
+  closeBtn.onclick = closeModal;
+  ch.appendChild(closeBtn);
+  document.getElementById('modal').style.display = 'flex';
+  gameState.paused = true;
+};
+
 // ── INPUT ─────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   keys[e.key] = true;
@@ -1571,4 +1719,18 @@ document.addEventListener('keyup', e => keys[e.key] = false);
 
 function loop() { moveP(); draw(); updateHUD(); requestAnimationFrame(loop); }
 loop();
+
+// ── STARTUP SAVE CHECK ────────────────────────────────────────────────────
+(function checkStartupSave() {
+  const raw = localStorage.getItem('factorytown_save');
+  if (!raw) return;
+  modal('WELCOME BACK!', 'Continue your saved game?', ['Continue', 'New Game'], i => {
+    if (i === 0) {
+      applyLoad(raw);
+    } else {
+      localStorage.removeItem('factorytown_save');
+      log('Starting a new game.', 'g');
+    }
+  });
+})();
 </script>
