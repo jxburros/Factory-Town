@@ -883,6 +883,10 @@ const CONTRACT_TEMPLATES = [
   { title: 'Processor Order', item: 'processor', qty: 2, reward: 110, days: 5, minFactoryLv: 4 },
   { title: 'Emergency Bolts', item: 'bolt', qty: 12, reward: 90, days: 3, minFactoryLv: 1 },
   { title: 'Premium Gears', item: 'gear', qty: 8, reward: 120, days: 5, minFactoryLv: 2 },
+  { title: 'Spring Tune-Up', item: 'gear', qty: 4, reward: 90, days: 4, minFactoryLv: 2, season: 'Spring' },
+  { title: 'Summer Grid Repair', item: 'motor', qty: 2, reward: 85, days: 3, minFactoryLv: 3, season: 'Summer' },
+  { title: 'Fall Harvest Crates', item: 'bolt', qty: 10, reward: 88, days: 4, minFactoryLv: 1, season: 'Fall' },
+  { title: 'Winter Heater Rush', item: 'processor', qty: 2, reward: 125, days: 4, minFactoryLv: 4, season: 'Winter' },
 ];
 const NPC_SPILLOVER = {
   boss: { otto: 1 },
@@ -1034,6 +1038,10 @@ const gameState = {
     { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 24, minLv: 2, mat: { scrapMetal: 3, wire: 1 } },
     { id: 'motor', label: 'MOTOR', time: 40, energy: 22, pay: 45, minLv: 3, mat: { wire: 2, circuit: 1 } },
     { id: 'processor', label: 'PROCESSOR', time: 50, energy: 28, pay: 65, minLv: 4, mat: { circuit: 2, wire: 1 } },
+    { id: 'spring_kit', label: 'SPRING TOOL KIT', time: 28, energy: 12, pay: 34, minLv: 2, season: 'Spring', mat: { scrapMetal: 2, wire: 2 } },
+    { id: 'summer_fan', label: 'SUMMER COOLING FAN', time: 32, energy: 14, pay: 38, minLv: 2, season: 'Summer', mat: { scrapMetal: 2, wire: 2 } },
+    { id: 'fall_regulator', label: 'FALL FLOW REGULATOR', time: 36, energy: 16, pay: 42, minLv: 3, season: 'Fall', mat: { scrapMetal: 2, circuit: 1 } },
+    { id: 'winter_core', label: 'WINTER HEATER CORE', time: 42, energy: 20, pay: 50, minLv: 3, season: 'Winter', mat: { wire: 2, circuit: 1 } },
   ],
   travelOptions: [
     { id: 'walk', label: 'WALK  — 20 min, free', time: 20, cost: 0 },
@@ -1388,6 +1396,16 @@ function getSeason() {
 
 function getSeasonName() {
   return getSeason().name;
+}
+
+function getSeasonTag(targetSeason) {
+  if (!targetSeason) return '';
+  return ` [${targetSeason.toUpperCase()} ONLY]`;
+}
+
+function isSeasonAvailable(entry) {
+  if (!entry || !entry.season) return true;
+  return entry.season === getSeasonName();
 }
 
 function advanceSeasonForNewDay() {
@@ -2230,16 +2248,20 @@ function doAssignTasks() {
 
 function doCraft() {
   if (!gameState.tasks.every(t => t)) { log('You must finish all 3 tasks before crafting!', 'w'); return; }
-  const avail = gameState.craftItems.filter(c => gameState.fullProduction || c.minLv <= gameState.factoryLv);
-  if (!avail.length) { log('No craft recipes available yet.', 'w'); return; }
-  modal('CRAFT STATION', 'Choose what to make:', [...avail.map(c => {
+  const unlocked = gameState.craftItems.filter(c => gameState.fullProduction || c.minLv <= gameState.factoryLv);
+  if (!unlocked.length) { log('No craft recipes available yet.', 'w'); return; }
+  const seasonName = getSeasonName();
+  modal('CRAFT STATION', `Choose what to make:\nSeason: ${seasonName}`, [...unlocked.map(c => {
     const e = getCraftEnergy(c);
     const t = getCraftTime(c);
-    return `${c.label}  +$${getCraftPay(c)}  (${t}min, -${e}en)${matLabel(c.mat)}`;
+    const seasonLabel = getSeasonTag(c.season);
+    if (!isSeasonAvailable(c)) return `${c.label}${seasonLabel}  (Unavailable in ${seasonName})`;
+    return `${c.label}${seasonLabel}  +$${getCraftPay(c)}  (${t}min, -${e}en)${matLabel(c.mat)}`;
   }), 'DELIVER', 'Cancel'], i => {
-    if (i === avail.length) { doContractBoard(); return; }
-    if (i > avail.length) return;
-    const c = avail[i];
+    if (i === unlocked.length) { doContractBoard(); return; }
+    if (i > unlocked.length) return;
+    const c = unlocked[i];
+    if (!isSeasonAvailable(c)) { log(`That recipe is only available during ${c.season}.`, 'w'); return; }
     const e = getCraftEnergy(c);
     const t = getCraftTime(c);
     const missing = getMissingMats(c);
@@ -2531,7 +2553,14 @@ function doMarket() {
 function talkNPC(n) {
   const storyLine = getStoryDialogue(n);
   const f = n.friendship || 0;
-  const line = storyLine || (n.dialog ? n.dialog[Math.min(f, n.dialog.length - 1)] : '...');
+  const baseLine = n.dialog ? n.dialog[Math.min(f, n.dialog.length - 1)] : '...';
+  const seasonFlavor = {
+    Spring: 'Spring has everyone in a better mood.',
+    Summer: "Summer heat's no joke. Stay hydrated.",
+    Fall: 'Fall air makes the town feel busy.',
+    Winter: "Winter roads are rough, so plan ahead."
+  };
+  const line = storyLine || `${baseLine} ${seasonFlavor[getSeasonName()] || ''}`.trim();
   const hearts = '♥'.repeat(f) + '♡'.repeat(5 - f);
   const role = n.role || '';
   const perkDesc = n.perk
@@ -2845,9 +2874,13 @@ function getStoryDialogue(npc) {
 
 function refreshAvailableContracts(force = false) {
   if (gameState.day < (gameState.contractRefreshDay || 1) && !force) return;
-  const pool = CONTRACT_TEMPLATES.filter(c => c.minFactoryLv <= gameState.factoryLv);
+  const pool = CONTRACT_TEMPLATES.filter(c => c.minFactoryLv <= gameState.factoryLv && isSeasonAvailable(c));
   const shuffled = pool.sort(() => Math.random() - 0.5).slice(0, 2);
-  gameState.availableContracts = shuffled.map(t => ({ ...t, id: `offer_${Date.now()}_${Math.random().toString(16).slice(2, 7)}` }));
+  gameState.availableContracts = shuffled.map(t => ({
+    ...t,
+    seasonLabel: getSeasonTag(t.season),
+    id: `offer_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`
+  }));
   gameState.contractRefreshDay = gameState.day + 3;
 }
 
@@ -2856,6 +2889,7 @@ function acceptContract(offerIdx) {
   if (activeCount >= 2) { log('You can only manage 2 contracts at once.', 'w'); return; }
   const offer = gameState.availableContracts[offerIdx];
   if (!offer) return;
+  if (!isSeasonAvailable(offer)) { log(`That contract is only available in ${offer.season}.`, 'w'); return; }
   gameState.contracts.push({
     id: `contract_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`,
     title: offer.title,
@@ -2873,13 +2907,18 @@ function acceptContract(offerIdx) {
 
 function doContractBoard() {
   refreshAvailableContracts();
+  const seasonName = getSeasonName();
   const active = (gameState.contracts || []).filter(c => c.status === 'active');
-  const lines = ['Active Contracts:'];
+  const lines = [`Season: ${seasonName}`, '', 'Active Contracts:'];
   if (!active.length) lines.push('None');
   active.forEach(c => lines.push(`${c.title}: ${c.delivered}/${c.qty} — ${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`));
   lines.push('', 'Available Orders:');
   if (!gameState.availableContracts.length) lines.push('No new offers yet.');
-  const opts = gameState.availableContracts.map(c => `Accept: ${c.title} (${c.qty} ${c.item})  $${c.reward}  ${c.days}d`);
+  const opts = gameState.availableContracts.map(c => `Accept: ${c.title}${c.seasonLabel || ''} (${c.qty} ${c.item})  $${c.reward}  ${c.days}d`);
+  const seasonalLocked = CONTRACT_TEMPLATES
+    .filter(c => c.season && c.minFactoryLv <= gameState.factoryLv && !isSeasonAvailable(c))
+    .map(c => `${c.title}${getSeasonTag(c.season)}`);
+  if (seasonalLocked.length) lines.push('', 'Out of Season:', ...seasonalLocked.slice(0, 3));
   opts.push('Close');
   modal('CONTRACT BOARD', lines.join('\n'), opts, i => {
     if (i >= gameState.availableContracts.length) return;
