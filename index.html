@@ -883,6 +883,12 @@ const NPC_SPILLOVER = {
   doc: { maya: 1 },
   sam: { chef: 1 },
 };
+const HOME_UPGRADES = [
+  { level: 2, name: 'Better Kitchen', cost: 60, description: 'Stove now restores 80 hunger. Fridge holds 5 bread.' },
+  { level: 3, name: 'Comfortable Bed', cost: 120, description: 'Sleep restores 100% energy (up from 65 pts).' },
+  { level: 4, name: 'Large Storage', cost: 200, description: 'Carry limit increases from 15 to 25.' },
+];
+
 
 // ── GAME STATE ────────────────────────────────────────────
 const gameState = {
@@ -914,7 +920,15 @@ const gameState = {
   scene: 'HOME',
   shiftDone: false,
   weeklyPay: 0,
-  inventory: { bread: 1, coffee: 0, coffee_item: 0, uniform: 0, bike: 0, bus_pass: 0, scrapMetal: 0, wire: 0, circuit: 0, toolbelt: 0, thermos: 0, energy_drink: 0 },
+  inventory: { bread: 1, coffee: 0, coffee_item: 0, uniform: 0, bike: 0, bus_pass: 0, scrapMetal: 0, wire: 0, circuit: 0, toolbelt: 0, thermos: 0, energy_drink: 0, gloves: 0, lunchbox: 0, blueprint: 0 },
+  carryLimit: 15,
+  homeLv: 1,
+  fridgeCapacity: 3,
+  homeStorage: { scrapMetal: 0, wire: 0, circuit: 0 },
+  morningActions: [],
+  morningRoutineDone: false,
+  morningRoutineCount: 0,
+  carriedFull: false,
   travelMethod: 'walk',
   craftedToday: 0,
   totalCrafted: 0,
@@ -1245,8 +1259,49 @@ const gameState = {
       reward: { money: 60, xp: 35, rep: 0.5 },
       progress: 0,
     },
+    {
+      id: 'home_sweet_home',
+      title: 'Home Sweet Home',
+      description: 'Upgrade your home for the first time.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'home_level', target: 2 },
+      reward: { money: 25, xp: 15, rep: 0.2 },
+      progress: 0,
+    },
+    {
+      id: 'well_prepared',
+      title: 'Well Prepared',
+      description: 'Complete your morning routine 5 times.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'morning_routine', target: 5 },
+      reward: { money: 20, xp: 10, rep: 0.2 },
+      progress: 0,
+    },
+    {
+      id: 'pack_rat',
+      title: 'Pack Rat',
+      description: 'Fill your carry limit to maximum.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'carry_full', target: 1 },
+      reward: { money: 15, xp: 10, rep: 0.1 },
+      progress: 0,
+    },
+    {
+      id: 'fully_upgraded',
+      title: 'Fully Upgraded',
+      description: 'Upgrade both your home and factory to maximum level.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'fully_upgraded', target: 1 },
+      reward: { money: 120, xp: 60, rep: 1 },
+      progress: 0,
+    },
   ],
 };
+Object.defineProperty(gameState, 'carryUsed', { get: () => getCarryUsed() });
 
 const player = { x: 96, y: 130, facing: 2, frame: 0, ft: 0, moving: false };
 const keys = {};
@@ -1273,7 +1328,9 @@ const SCENE_OBJECTS = {
     { x: 56, y: 16, w: 24, h: 32, lbl: 'WARDROBE', act: 'wardrobe', spr: 'wardrobe' },
     { x: 176, y: 16, w: 16, h: 24, lbl: 'FRIDGE', act: 'fridge', spr: 'fridge' },
     { x: 208, y: 16, w: 16, h: 16, lbl: 'STOVE', act: 'stove', spr: 'stove' },
+    { x: 240, y: 16, w: 24, h: 20, lbl: 'CHEST', act: 'chest', col: '#4a3a1a' },
     { x: 112, y: 16, w: 32, h: 16, lbl: 'TABLE', act: 'table', col: '#b06820' },
+    { x: 176, y: 80, w: 32, h: 32, lbl: 'UPGRADE\nHOME', act: 'upgrade_home', col: '#2a1a4a' },
     { x: 112, y: 192, w: 64, h: 32, lbl: 'DOOR OUT', act: 'exit_home', portal: true, col: '#664422' },
   ],
   STREET: [
@@ -1341,7 +1398,8 @@ function handleDailyTaskCompletion() {
 function completeTaskByIndex(idx, source = 'player') {
   if (gameState.tasks[idx]) return false;
   const task = getDailyTaskByIndex(idx);
-  const energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+  let energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+  if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * 0.85));
   if (source === 'player') {
     if (gameState.energy < energyCost) { log('Too tired to do that task right now.', 'w'); return false; }
     gameState.time += task.time;
@@ -1458,6 +1516,29 @@ function drawSceneDecor() {
     ctx.strokeStyle = '#5a4080';
     ctx.lineWidth = 1;
     ctx.strokeRect(68, 100, 120, 56);
+
+    if (gameState.homeLv >= 2) {
+      ctx.fillStyle = '#6a4426';
+      ctx.fillRect(200, 90, 10, 7);
+      ctx.fillStyle = '#2f8a3b';
+      [[203, 88], [206, 86], [209, 88], [205, 84], [208, 84]].forEach(([x, y]) => ctx.fillRect(x, y, 2, 2));
+    }
+    if (gameState.homeLv >= 3) {
+      ctx.fillStyle = 'rgba(170, 100, 70, 0.45)';
+      ctx.fillRect(80, 100, 80, 40);
+      ctx.strokeStyle = 'rgba(255, 210, 160, 0.55)';
+      ctx.strokeRect(80, 100, 80, 40);
+      ctx.fillStyle = 'rgba(255, 210, 160, 0.3)';
+      for (let x = 88; x < 152; x += 16) ctx.fillRect(x, 108, 8, 2);
+      for (let y = 112; y < 136; y += 12) ctx.fillRect(88, y, 64, 2);
+    }
+    if (gameState.homeLv >= 4) {
+      ctx.fillStyle = '#884422';
+      ctx.fillRect(0, 20, 8, 40);
+      ctx.fillRect(304, 20, 8, 40);
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.04)';
+      ctx.fillRect(0, 120, CANVAS_W, 120);
+    }
   }
   if (gameState.scene === 'FACTORY') {
     for (let c = 0; c < CANVAS_W; c += 16) {
@@ -1666,6 +1747,35 @@ function drawLighting() {
   if (h >= 6 && h < 8) { ctx.fillStyle = 'rgba(255,200,80,0.06)'; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H); }
 }
 
+
+function getCarryUsed() {
+  const inv = gameState.inventory || {};
+  return (inv.bread || 0) + (inv.coffee_item || 0) + (inv.energy_drink || 0) + (inv.scrapMetal || 0) + (inv.wire || 0) + (inv.circuit || 0) + (inv.blueprint || 0);
+}
+
+function canCarry(qty) {
+  return getCarryUsed() + qty <= gameState.carryLimit;
+}
+
+function ensureCarrySpace(qty) {
+  if (canCarry(qty)) return true;
+  log('Inventory full! Drop something or upgrade your bag.', 'b');
+  return false;
+}
+
+function markMorningAction(id) {
+  if (gameState.scene !== 'HOME' || gameState.time >= 8 * 60) return;
+  if (!Array.isArray(gameState.morningActions)) gameState.morningActions = [];
+  if (!gameState.morningActions.includes(id)) gameState.morningActions.push(id);
+}
+
+function checkCarryFullQuest() {
+  if (!gameState.carriedFull && getCarryUsed() >= gameState.carryLimit) {
+    gameState.carriedFull = true;
+    checkQuest('pack_rat');
+  }
+}
+
 // ── NEARBY ────────────────────────────────────────────────────────────
 function nearObj() {
   for (const o of SCENE_OBJECTS[gameState.scene]) {
@@ -1695,32 +1805,94 @@ function interact() {
   const a = o.act;
   if (a === 'bed') {
     if (gameState.time < 18 * 60 && gameState.time >= 6 * 60) { log('Too early to sleep!', 'w'); return; }
-    modal('SLEEP', 'Sleep until 6 AM tomorrow?\nEnergy will be restored.', ['Sleep (advance to next day)', 'Cancel'], i => { if (i === 0) doSleep(); });
+    const sleepMsg = gameState.homeLv >= 3
+      ? 'Sleep until 6 AM tomorrow?\nSlept well — full energy restored!'
+      : 'Sleep until 6 AM tomorrow?\nEnergy will be restored.';
+    modal('SLEEP', sleepMsg, ['Sleep (advance to next day)', 'Cancel'], i => { if (i === 0) doSleep(); });
   } else if (a === 'wardrobe') {
-    if (!gameState.clothed) { gameState.clothed = true; log('You got dressed.', 'g'); }
-    else modal('WARDROBE', 'Manage your clothing.', ['Remove clothes (risky outside!)', 'Cancel'], i => {
+    if (!gameState.clothed) {
+      gameState.clothed = true;
+      log('You got dressed.', 'g');
+      markMorningAction('dressed');
+    } else modal('WARDROBE', 'Manage your clothing.', ['Remove clothes (risky outside!)', 'Cancel'], i => {
       if (i === 0) { gameState.clothed = false; log('Clothes removed. Stay inside!', 'w'); }
     });
   } else if (a === 'fridge') {
     const opts = [];
     if (gameState.inventory.bread > 0) opts.push(`Eat bread (${gameState.inventory.bread} left)  +40 hunger`);
     if (gameState.inventory.energy_drink > 0) opts.push(`Use energy drink (${gameState.inventory.energy_drink} left)  +50 energy`);
-    opts.push('Buy bread  $4  +40 hunger', 'Cancel');
+    opts.push(`Buy bread  $4  +40 hunger  (Fridge ${gameState.inventory.bread || 0}/${gameState.fridgeCapacity})`, 'Cancel');
     modal('FRIDGE', 'What would you like?', opts, i => {
-      if (opts[i]?.startsWith('Buy') && pay(4)) { gameState.hunger = cap(gameState.hunger + 40); log('Bought and ate bread.', 'g'); }
-      else if (opts[i]?.startsWith('Eat') && gameState.inventory.bread > 0) { gameState.inventory.bread--; gameState.hunger = cap(gameState.hunger + 40); log('Ate bread from fridge.', 'g'); }
+      if (opts[i]?.startsWith('Buy')) {
+        if ((gameState.inventory.bread || 0) >= gameState.fridgeCapacity) { log(`Fridge full! (max ${gameState.fridgeCapacity} bread)`, 'w'); return; }
+        if (!ensureCarrySpace(1)) return;
+        if (pay(4)) { gameState.inventory.bread = (gameState.inventory.bread || 0) + 1; log('Bought bread and stocked fridge.', 'g'); checkCarryFullQuest(); }
+      }
+      else if (opts[i]?.startsWith('Eat') && gameState.inventory.bread > 0) { gameState.inventory.bread--; gameState.hunger = cap(gameState.hunger + 40); log('Ate bread from fridge.', 'g'); markMorningAction('ate'); }
       else if (opts[i]?.startsWith('Use energy drink') && gameState.inventory.energy_drink > 0) { gameState.inventory.energy_drink--; gameState.energy = cap(gameState.energy + 50); log('Used energy drink! +50 energy.', 'g'); }
     });
   } else if (a === 'stove') {
-    modal('STOVE', 'Cook a home meal?', ['Cook meal  +50 hunger  (15 min)', 'Cancel'], i => {
-      if (i === 0) { gameState.time += 15; gameState.hunger = cap(gameState.hunger + 50); log('Cooked and ate a meal.', 'g'); }
+    const hungerGain = gameState.homeLv >= 2 ? 80 : 50;
+    modal('STOVE', 'Use the stove:', [`Cook meal  +${hungerGain} hunger  (15 min)`, 'Make coffee  (15 min, +20 energy)', 'Cancel'], i => {
+      if (i === 0) { gameState.time += 15; gameState.hunger = cap(gameState.hunger + hungerGain); log('Cooked and ate a meal.', 'g'); markMorningAction('ate'); }
+      else if (i === 1) { gameState.time += 15; gameState.energy = cap(gameState.energy + 20); log('Made and drank coffee.', 'g'); markMorningAction('coffee'); }
     });
   } else if (a === 'table') {
     log('You sit down and rest your feet.');
+  } else if (a === 'chest') {
+    const inv = gameState.inventory;
+    const chest = gameState.homeStorage;
+    const desc = `Chest — Scrap: ${chest.scrapMetal || 0}  Wire: ${chest.wire || 0}  Circuit: ${chest.circuit || 0}
+Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${inv.circuit || 0}`;
+    const opts = [
+      `Store Scrap Metal (have: ${inv.scrapMetal || 0})`,
+      `Store Wire (have: ${inv.wire || 0})`,
+      `Store Circuit (have: ${inv.circuit || 0})`,
+      `Take Scrap Metal (chest: ${chest.scrapMetal || 0})`,
+      `Take Wire (chest: ${chest.wire || 0})`,
+      `Take Circuit (chest: ${chest.circuit || 0})`,
+      'Close',
+    ];
+    const keyByIdx = ['scrapMetal', 'wire', 'circuit', 'scrapMetal', 'wire', 'circuit'];
+    const labelByKey = { scrapMetal: 'Scrap Metal', wire: 'Wire', circuit: 'Circuit' };
+    modal('HOME STORAGE', desc, opts, i => {
+      if (i >= 0 && i <= 2) {
+        const key = keyByIdx[i];
+        const amt = inv[key] || 0;
+        if (amt <= 0) { log(`No ${labelByKey[key]} to store.`, 'w'); return; }
+        inv[key] -= amt;
+        chest[key] = (chest[key] || 0) + amt;
+        log(`Stored ${amt} ${labelByKey[key]}.`, 'g');
+      } else if (i >= 3 && i <= 5) {
+        const key = keyByIdx[i];
+        const amt = chest[key] || 0;
+        if (amt <= 0) { log(`No ${labelByKey[key]} in chest.`, 'w'); return; }
+        const space = Math.max(0, gameState.carryLimit - getCarryUsed());
+        if (space <= 0) { log('Inventory full! Drop something or upgrade your bag.', 'b'); return; }
+        const takeAmt = Math.min(amt, space);
+        chest[key] -= takeAmt;
+        inv[key] = (inv[key] || 0) + takeAmt;
+        if (takeAmt < amt) log(`Took ${takeAmt} ${labelByKey[key]} (carry limit reached).`, 'w');
+        else log(`Took ${takeAmt} ${labelByKey[key]}.`, 'g');
+        checkCarryFullQuest();
+      }
+    });
+  } else if (a === 'upgrade_home') {
+    doHomeUpgrade();
   } else if (a === 'exit_home') {
     if (!gameState.clothed) { log('You must be dressed before going outside!', 'b'); return; }
     const opts = getTravelOpts();
-    modal('LEAVE HOME', 'How will you travel?', opts.map(o => o.label), i => doTravel(opts[i], 'STREET', 108, 96));
+    modal('LEAVE HOME', 'How will you travel?', opts.map(o => o.label), i => {
+      if (gameState.time < 8 * 60 && !gameState.morningRoutineDone && new Set(gameState.morningActions || []).size >= 2) {
+        gameState.energy = cap(gameState.energy + 10);
+        gameState.hunger = cap(gameState.hunger + 5);
+        gameState.morningRoutineDone = true;
+        gameState.morningRoutineCount = (gameState.morningRoutineCount || 0) + 1;
+        log('Morning routine complete! +10 energy, +5 hunger', 'g');
+        checkQuest('well_prepared');
+      }
+      doTravel(opts[i], 'STREET', 108, 96);
+    });
   } else if (a === 'enter_home') {
     changeScene('HOME', 96, 120);
   } else if (a === 'enter_factory') {
@@ -1841,7 +2013,8 @@ function interact() {
     if (gameState.tasks[idx]) { log('Already completed: ' + gameState.taskNames[idx]); return; }
     if (gameState.assignedTasks[idx] === 'otto') { log('Otto is already working on that task.', 'w'); return; }
     const task = getDailyTaskByIndex(idx);
-    const energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+    let energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+  if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * 0.85));
     modal(
       task.label,
       `${task.description}\nTime Cost: ${task.time} min\nEnergy Cost: ${energyCost}`,
@@ -2022,11 +2195,18 @@ function doUpgrade() {
   const next = FACTORY_UPGRADES.find(u => u.level === gameState.factoryLv + 1);
   if (!next) { modal('UPGRADE STATION', 'Factory is already at maximum level.', ['Close'], () => {}); return; }
   const currentName = gameState.factoryLv === 1 ? 'Starter Line' : (FACTORY_UPGRADES.find(u => u.level === gameState.factoryLv)?.name || 'Factory');
-  modal('UPGRADE STATION', `Current: Lv ${gameState.factoryLv} — ${currentName}\nNext: Lv ${next.level} — ${next.name}\n\n${next.description}\n\nXP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\nCost: $${next.cost}`, [`Upgrade — $${next.cost}`, 'Cancel'], i => {
+  const hasBlueprint = (gameState.inventory.blueprint || 0) > 0;
+  const finalCost = Math.max(0, next.cost - (hasBlueprint ? 20 : 0));
+  const bpNote = hasBlueprint ? `\nCost: $${finalCost} (Blueprint applied)` : `\nCost: $${finalCost}`;
+  modal('UPGRADE STATION', `Current: Lv ${gameState.factoryLv} — ${currentName}\nNext: Lv ${next.level} — ${next.name}\n\n${next.description}\n\nXP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}${bpNote}`, [`Upgrade — $${finalCost}`, 'Cancel'], i => {
     if (i === 0) {
-      if (gameState.money < next.cost) { log('Not enough money to upgrade.', 'b'); return; }
+      if (gameState.money < finalCost) { log('Not enough money to upgrade.', 'b'); return; }
       const oldTownLv = gameState.townLv;
-      gameState.money -= next.cost;
+      gameState.money -= finalCost;
+      if (hasBlueprint) {
+        gameState.inventory.blueprint = Math.max(0, (gameState.inventory.blueprint || 0) - 1);
+        log('Blueprint consumed for factory discount.', 'g');
+      }
       gameState.factoryLv++;
       gameState.factoryXP = 0;
       if (next.level >= 2) gameState.improvedTools = true;
@@ -2046,7 +2226,40 @@ function doUpgrade() {
       triggerStoryProgress();
       if (gameState.townLv > oldTownLv) triggerTownLevelUp(gameState.townLv);
       applyTownBuildings();
+      checkQuest('fully_upgraded');
     }
+  });
+}
+
+
+function doHomeUpgrade() {
+  const next = HOME_UPGRADES.find(u => u.level === gameState.homeLv + 1);
+  const current = gameState.homeLv === 1 ? 'Starter Home' : (HOME_UPGRADES.find(u => u.level === gameState.homeLv)?.name || 'Upgraded Home');
+  if (!next) {
+    modal('HOME UPGRADES', `Current: Lv ${gameState.homeLv} — ${current}
+
+Your home is fully upgraded!`, ['Close'], () => {});
+    return;
+  }
+  const desc = `Current: Lv ${gameState.homeLv} — ${current}
+Next: Lv ${next.level} — ${next.name}
+
+${next.description}
+
+Cost: $${next.cost}`;
+  modal('HOME UPGRADES', desc, [`Upgrade — $${next.cost}`, 'Cancel'], i => {
+    if (i !== 0) return;
+    if (!pay(next.cost)) return;
+    gameState.homeLv = next.level;
+    gameState.fridgeCapacity = gameState.homeLv >= 2 ? 5 : 3;
+    if (gameState.homeLv >= 4) {
+      gameState.carryLimit = 25;
+      log('Carry limit increased to 25!', 'g');
+    }
+    log(`Home upgraded: ${next.name}!`, 'g');
+    modal('UPGRADE COMPLETE', `${next.name} installed!`, ['Awesome'], () => {});
+    checkQuest('home_sweet_home');
+    checkQuest('fully_upgraded');
   });
 }
 
@@ -2071,10 +2284,10 @@ function doShopFood() {
   const drinkCost = applyPillarDiscount(6);
   const desc = `Buy food and drinks:${pillarDiscount ? '\n(Pillar discount)' : ''}`;
   const items = [
-    { label: `BREAD         $${breadCost}   +40 hunger  (have: ${inv.bread || 0})`, fn: () => { if (pay(breadCost)) { inv.bread = (inv.bread || 0) + 1; log('Bought bread. +40 hunger when eaten.', 'g'); } } },
+    { label: `BREAD         $${breadCost}   +40 hunger  (have: ${inv.bread || 0})`, fn: () => { if (!ensureCarrySpace(1)) return; if (pay(breadCost)) { inv.bread = (inv.bread || 0) + 1; log('Bought bread. +40 hunger when eaten.', 'g'); checkCarryFullQuest(); } } },
     { label: `COFFEE        $${coffeeCost}   +30 energy (immediate)`, fn: () => { if (pay(coffeeCost)) { gameState.energy = cap(gameState.energy + 30); log('Drank coffee — energized!', 'g'); } } },
     { label: `HOT MEAL      $${mealCost}   +70 hunger +20 energy`, fn: () => { if (pay(mealCost)) { gameState.hunger = cap(gameState.hunger + 70); gameState.energy = cap(gameState.energy + 20); log('Had a hot meal. Feeling good!', 'g'); } } },
-    { label: `ENERGY DRINK  $${drinkCost}   +50 energy  (have: ${inv.energy_drink || 0})`, fn: () => { if (pay(drinkCost)) { inv.energy_drink = (inv.energy_drink || 0) + 1; log('Bought energy drink. Use from inventory.', 'g'); } } },
+    { label: `ENERGY DRINK  $${drinkCost}   +50 energy  (have: ${inv.energy_drink || 0})`, fn: () => { if (!ensureCarrySpace(1)) return; if (pay(drinkCost)) { inv.energy_drink = (inv.energy_drink || 0) + 1; log('Bought energy drink. Use from inventory.', 'g'); checkCarryFullQuest(); } } },
   ];
   modal('FOOD & CONSUMABLES', desc, [...items.map(it => it.label), 'Back', 'Leave Shop'], i => {
     if (i < items.length) { items[i].fn(); doShopFood(); }
@@ -2091,11 +2304,18 @@ function doShopEquip() {
     { id: 'bus_pass', label: `BUS PASS  $${applyPillarDiscount(15)}  5min, $2/trip`, cost: applyPillarDiscount(15) },
     { id: 'toolbelt', label: `TOOLBELT  $${applyPillarDiscount(45)}  -20% craft energy`, cost: applyPillarDiscount(45) },
     { id: 'thermos',  label: `THERMOS   $${applyPillarDiscount(25)}  -15% energy drain`, cost: applyPillarDiscount(25) },
+    { id: 'gloves',   label: `WORK GLOVES  $${applyPillarDiscount(18)}  -15% task energy`, cost: applyPillarDiscount(18) },
+    { id: 'lunchbox', label: `LUNCHBOX     $${applyPillarDiscount(22)}  -20% hunger drain`, cost: applyPillarDiscount(22) },
+    { id: 'blueprint', label: `BLUEPRINT    $${applyPillarDiscount(30)}  -$20 next factory upgrade`, cost: applyPillarDiscount(30), qty: true },
   ];
   modal('EQUIPMENT', `One-time purchases:${pillarDiscount ? '\n(Pillar discount)' : ''}`, [...items.map(it => it.label + (inv[it.id] ? '  \u2713 OWNED' : '')), 'Back', 'Leave Shop'], i => {
     if (i < items.length) {
       const it = items[i];
-      if (inv[it.id]) { log('You already own: ' + it.id + '.', 'w'); }
+      if (it.qty) {
+        if ((inv.blueprint || 0) > 0) { log('You already have a Blueprint ready.', 'w'); }
+        else if (!ensureCarrySpace(1)) { /* blocked */ }
+        else if (pay(it.cost)) { inv.blueprint = (inv.blueprint || 0) + 1; log('Purchased: BLUEPRINT.', 'g'); checkCarryFullQuest(); }
+      } else if (inv[it.id]) { log('You already own: ' + it.id + '.', 'w'); }
       else if (pay(it.cost)) { inv[it.id] = 1; log('Purchased: ' + it.label + '.', 'g'); checkQuest('tooled_up'); }
       doShopEquip();
     } else if (i === items.length) doShop();
@@ -2111,11 +2331,14 @@ function doShopMaterials() {
   const wire3 = applyPillarDiscount(15);
   const circuit1 = applyPillarDiscount(12);
   function buyMat(key, qty, cost) {
+    if (!ensureCarrySpace(qty)) { doShopMaterials(); return; }
+    if (!ensureCarrySpace(qty)) { doMarket(); return; }
     if (pay(cost)) {
       inv[key] = (inv[key] || 0) + qty;
       gameState.materialsBought = (gameState.materialsBought || 0) + qty;
       log(`Bought ${qty}x ${key === 'scrapMetal' ? 'Scrap Metal' : key === 'wire' ? 'Wire' : 'Circuit'}.`, 'g');
       checkQuest('material_girl');
+      checkCarryFullQuest();
     }
     doShopMaterials();
   }
@@ -2148,7 +2371,8 @@ function doShopGifts() {
   modal('GIFTS', 'Buy gifts for NPCs:\n(Bread & Scrap Metal also usable elsewhere)', [...items.map(it => it.label), 'Back', 'Leave Shop'], i => {
     if (i < items.length) {
       const it = items[i];
-      if (pay(it.cost)) { inv[it.id] = (inv[it.id] || 0) + 1; log(`Bought: ${it.label.split('  ')[0].trim()}.`, 'g'); }
+      if (!ensureCarrySpace(1)) { doShopGifts(); return; }
+      if (pay(it.cost)) { inv[it.id] = (inv[it.id] || 0) + 1; log(`Bought: ${it.label.split('  ')[0].trim()}.`, 'g'); checkCarryFullQuest(); }
       doShopGifts();
     } else if (i === items.length) doShop();
   });
@@ -2163,6 +2387,8 @@ function doMarket() {
   const circuitCost = Math.max(1, 30 - samDiscount);
   const mealCost = 5;
   function buyBulk(key, qty, cost) {
+    if (!ensureCarrySpace(qty)) { doShopMaterials(); return; }
+    if (!ensureCarrySpace(qty)) { doMarket(); return; }
     if (pay(cost)) {
       inv[key] = (inv[key] || 0) + qty;
       gameState.materialsBought = (gameState.materialsBought || 0) + qty;
@@ -2170,6 +2396,7 @@ function doMarket() {
       log(`Market: bought ${qty}x ${label} for $${cost}.`, 'g');
       if (samDiscount) log("Sam's deal: -$3!", 'g');
       checkQuest('material_girl');
+      checkCarryFullQuest();
     }
     doMarket();
   }
@@ -2297,7 +2524,8 @@ function doSleep() {
     flavor,
   ].join('\n');
 
-  modal(`DAY ${gameState.day} SUMMARY`, desc, ['Start New Day'], () => {
+  const sleepNote = gameState.homeLv >= 3 ? '\nSlept well — full energy restored!' : '';
+  modal(`DAY ${gameState.day} SUMMARY`, desc + sleepNote, ['Start New Day'], () => {
     if (canPayRent) {
       gameState.money -= 10;
       if (gameState.rentDebt > 0) { gameState.rentDebt = 0; }
@@ -2312,7 +2540,7 @@ function doSleep() {
     }
     if (gameState.money > 100) checkQuest('in_the_black');
     gameState.time = 6 * 60;
-    gameState.energy = Math.min(100, gameState.energy + 65);
+    gameState.energy = gameState.homeLv >= 3 ? 100 : Math.min(100, gameState.energy + 65);
     gameState.dailyTasks = pickDailyTasks();
     gameState.tasks = [false, false, false];
     gameState.assignedTasks = { 0: null, 1: null, 2: null };
@@ -2330,6 +2558,8 @@ function doSleep() {
     gameState.freeCoffeeUsed = false;
     gameState.vitaminsToday = false;
     gameState.attendedEventToday = false;
+    gameState.morningActions = [];
+    gameState.morningRoutineDone = false;
     updateContractsForNewDay();
     gameState.day++;
     gameState.hunger = Math.max(gameState.hunger - 10, 20);
@@ -2584,7 +2814,9 @@ function passive() {
   if (passiveTick < 200) return;
   passiveTick = 0;
   gameState.time++;
-  const _hDrain = gameState.vitaminsToday ? 0.2 : 0.4;
+  let _hDrain = 0.4;
+  if (gameState.inventory.lunchbox) _hDrain *= 0.8;
+  if (gameState.vitaminsToday) _hDrain *= 0.5;
   gameState.hunger = Math.max(0, gameState.hunger - _hDrain);
   const energyDrain = gameState.inventory.thermos ? 0.15 * 0.85 : 0.15;
   gameState.energy = Math.max(0, gameState.energy - energyDrain);
@@ -2727,7 +2959,12 @@ function modal(title, desc, choices, cb, opts = {}) {
   gameState.paused = true;
 }
 
-function closeModal() { document.getElementById('modal').style.display = 'none'; gameState.paused = false; }
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  const md = document.getElementById('md');
+  if (md) md.style.color = '';
+  gameState.paused = false;
+}
 
 // ── LOG ───────────────────────────────────────────────────────────────────
 const logEl = document.getElementById('log');
@@ -2743,10 +2980,15 @@ function log(msg, t = '') {
 // ── GLOBAL ────────────────────────────────────────────────────────────────
 window.showInventory = () => {
   const inv = gameState.inventory;
+  const carryUsed = getCarryUsed();
+  const carryLabel = `Carrying: ${carryUsed} / ${gameState.carryLimit}`;
   const lines = [
+    carryLabel,
+    ``,
     `BREAD        : ${inv.bread || 0}`,
     `COFFEE (GIFT): ${inv.coffee_item || 0}`,
     `ENERGY DRINK : ${inv.energy_drink || 0}`,
+    `BLUEPRINT    : ${inv.blueprint || 0}`,
     ``,
     `SCRAP METAL  : ${inv.scrapMetal || 0}`,
     `WIRE         : ${inv.wire || 0}`,
@@ -2757,10 +2999,15 @@ window.showInventory = () => {
     `BUS PASS     : ${inv.bus_pass ? 'YES' : 'NO'}`,
     `TOOLBELT     : ${inv.toolbelt ? 'YES' : 'NO'}`,
     `THERMOS      : ${inv.thermos ? 'YES' : 'NO'}`,
+    `WORK GLOVES  : ${inv.gloves ? 'YES' : 'NO'}`,
+    `LUNCHBOX     : ${inv.lunchbox ? 'YES' : 'NO'}`,
   ].join('\n');
   const opts = [];
   if (inv.energy_drink > 0) opts.push(`Use Energy Drink  (+50 energy)`);
   opts.push('Close');
+  const carryTone = carryUsed >= gameState.carryLimit ? 'b' : (carryUsed >= gameState.carryLimit * 0.8 ? 'w' : 'g');
+  log(carryLabel, carryTone);
+  checkCarryFullQuest();
   modal('INVENTORY', lines, opts, i => {
     if (opts[i] && opts[i].startsWith('Use Energy Drink') && inv.energy_drink > 0) {
       inv.energy_drink--;
@@ -2768,6 +3015,8 @@ window.showInventory = () => {
       log('Used energy drink! +50 energy.', 'g');
     }
   });
+  const md = document.getElementById('md');
+  if (md) md.style.color = carryUsed >= gameState.carryLimit ? '#ff7777' : (carryUsed >= gameState.carryLimit * 0.8 ? '#ffd455' : '#8fe7a1');
 };
 window.showStatus = () => {
   modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}  ${getRepTitle()}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
@@ -2813,6 +3062,9 @@ function applyLoad(raw) {
     if (inv.toolbelt === undefined) inv.toolbelt = 0;
     if (inv.thermos === undefined) inv.thermos = 0;
     if (inv.energy_drink === undefined) inv.energy_drink = 0;
+    if (inv.gloves === undefined) inv.gloves = 0;
+    if (inv.lunchbox === undefined) inv.lunchbox = 0;
+    if (inv.blueprint === undefined) inv.blueprint = 0;
     if (gameState.giftedToday === undefined) gameState.giftedToday = [];
     if (gameState.totalGiftsGiven === undefined) gameState.totalGiftsGiven = 0;
     if (gameState.ritaWarnedToday === undefined) gameState.ritaWarnedToday = false;
@@ -2829,6 +3081,17 @@ function applyLoad(raw) {
     if (gameState.contractsCompleted === undefined) gameState.contractsCompleted = 0;
     if (gameState.contractStreak === undefined) gameState.contractStreak = 0;
     if (gameState.clutchContract === undefined) gameState.clutchContract = false;
+    if (gameState.homeLv === undefined) gameState.homeLv = 1;
+    if (gameState.carryLimit === undefined) gameState.carryLimit = gameState.homeLv >= 4 ? 25 : 15;
+    if (gameState.fridgeCapacity === undefined) gameState.fridgeCapacity = gameState.homeLv >= 2 ? 5 : 3;
+    if (!gameState.homeStorage) gameState.homeStorage = { scrapMetal: 0, wire: 0, circuit: 0 };
+    if (gameState.homeStorage.scrapMetal === undefined) gameState.homeStorage.scrapMetal = 0;
+    if (gameState.homeStorage.wire === undefined) gameState.homeStorage.wire = 0;
+    if (gameState.homeStorage.circuit === undefined) gameState.homeStorage.circuit = 0;
+    if (!Array.isArray(gameState.morningActions)) gameState.morningActions = [];
+    if (gameState.morningRoutineDone === undefined) gameState.morningRoutineDone = false;
+    if (gameState.morningRoutineCount === undefined) gameState.morningRoutineCount = 0;
+    if (gameState.carriedFull === undefined) gameState.carriedFull = false;
     if (inv.coffee_item === undefined) inv.coffee_item = 0;
     // Inject any new quests missing from old saves
     const newQuests = [
@@ -2851,6 +3114,10 @@ function applyLoad(raw) {
       { id: 'contract_worker', title: 'Contract Worker', description: 'Complete 5 contracts total.', type: 'side', status: 'available', goal: { type: 'contracts_completed', target: 5 }, reward: { money: 75, xp: 40, rep: 0.5 }, progress: 0 },
       { id: 'under_pressure', title: 'Under Pressure', description: 'Complete a contract with only 1 day remaining.', type: 'side', status: 'available', goal: { type: 'clutch_contract_done', target: 1 }, reward: { money: 40, xp: 25, rep: 0.4 }, progress: 0 },
       { id: 'on_schedule', title: 'On Schedule', description: 'Complete 3 contracts without letting any fail.', type: 'progression', status: 'available', goal: { type: 'contract_streak', target: 3 }, reward: { money: 60, xp: 35, rep: 0.5 }, progress: 0 },
+      { id: 'home_sweet_home', title: 'Home Sweet Home', description: 'Upgrade your home for the first time.', type: 'progression', status: 'available', goal: { type: 'home_level', target: 2 }, reward: { money: 25, xp: 15, rep: 0.2 }, progress: 0 },
+      { id: 'well_prepared', title: 'Well Prepared', description: 'Complete your morning routine 5 times.', type: 'side', status: 'available', goal: { type: 'morning_routine', target: 5 }, reward: { money: 20, xp: 10, rep: 0.2 }, progress: 0 },
+      { id: 'pack_rat', title: 'Pack Rat', description: 'Fill your carry limit to maximum.', type: 'side', status: 'available', goal: { type: 'carry_full', target: 1 }, reward: { money: 15, xp: 10, rep: 0.1 }, progress: 0 },
+      { id: 'fully_upgraded', title: 'Fully Upgraded', description: 'Upgrade both your home and factory to maximum level.', type: 'progression', status: 'available', goal: { type: 'fully_upgraded', target: 1 }, reward: { money: 120, xp: 60, rep: 1 }, progress: 0 },
     ];
     newQuests.forEach(nq => { if (!gameState.quests.find(q => q.id === nq.id)) gameState.quests.push(nq); });
     // Update NPC profiles for saves that predate expanded NPC data
@@ -2936,6 +3203,10 @@ function checkQuest(questId) {
   else if (q.goal.type === 'contracts_completed') progress = gameState.contractsCompleted || 0;
   else if (q.goal.type === 'clutch_contract_done' || q.goal.type === 'clutch_contract') progress = gameState.clutchContract ? 1 : 0;
   else if (q.goal.type === 'contract_streak') progress = gameState.contractStreak || 0;
+  else if (q.goal.type === 'home_level') progress = gameState.homeLv || 1;
+  else if (q.goal.type === 'morning_routine') progress = gameState.morningRoutineCount || 0;
+  else if (q.goal.type === 'carry_full') progress = gameState.carriedFull ? 1 : 0;
+  else if (q.goal.type === 'fully_upgraded') progress = (gameState.homeLv >= 4 && gameState.factoryLv >= 5) ? 1 : 0;
   q.progress = progress;
   if (progress >= q.goal.target) completeQuest(q);
 }
