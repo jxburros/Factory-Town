@@ -1085,7 +1085,7 @@ const gameState = {
   townXP: 0,
   npcs: [
     {
-      id: 'boss', name: 'MR. VANCE', x: 188, y: 44, scene: 'FACTORY', spr: 'npc_boss',
+      id: 'boss', name: 'MR. VANCE', x: 124, y: 44, scene: 'FACTORY', spr: 'npc_boss',
       role: 'Factory Manager',
       schedule: { morning: 'FACTORY', evening: 'STREET' },
       gift: 'coffee_item',
@@ -1112,7 +1112,7 @@ const gameState = {
       friendship: 0,
     },
     {
-      id: 'otto', name: 'OTTO', x: 196, y: 140, scene: 'FACTORY', spr: 'npc_otto',
+      id: 'otto', name: 'OTTO', x: 126, y: 138, scene: 'FACTORY', spr: 'npc_otto',
       role: 'Factory Worker',
       schedule: { morning: 'FACTORY', evening: 'STREET' },
       gift: 'scrapMetal',
@@ -1649,6 +1649,10 @@ function getHomeSplitX() {
   return Math.floor(CANVAS_W / 2);
 }
 
+function getFactorySplitX() {
+  return Math.floor(CANVAS_W / 2);
+}
+
 const SCENE_OBJECTS = {
   HOME: [
     { x: 12, y: 18, w: 32, h: 16, lbl: 'BED', act: 'bed', spr: 'bed' },
@@ -1672,14 +1676,14 @@ const SCENE_OBJECTS = {
     { x: 236, y: 24, w: 48, h: 48, lbl: 'HOME', act: 'enter_home', spr: 'house', portal: true },
   ],
   FACTORY: [
-    { x: 16, y: 16, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
-    { x: 112, y: 16, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
-    { x: 208, y: 16, w: 48, h: 32, lbl: 'LOG PARTS', act: 'task2', taskIdx: 2, col: '#223344' },
-    { x: 224, y: 60, w: 48, h: 32, lbl: 'ASSIGN\nTASKS', act: 'assign_tasks', col: '#1a3a2a' },
-    { x: 32, y: 112, w: 48, h: 48, lbl: 'CRAFT', act: 'craft', spr: 'craftstation' },
-    { x: 128, y: 112, w: 48, h: 48, lbl: 'UPGRADE', act: 'upgrade', col: '#443322' },
-    { x: 224, y: 112, w: 48, h: 48, lbl: 'STORAGE', act: 'storage', col: '#333355' },
-    { x: 112, y: 196, w: 64, h: 32, lbl: 'EXIT', act: 'exit_factory', portal: true, col: '#664422' },
+    { x: 14, y: 20, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
+    { x: 74, y: 20, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
+    { x: 104, y: 64, w: 48, h: 32, lbl: 'LOG PARTS', act: 'task2', taskIdx: 2, col: '#223344' },
+    { x: 14, y: 112, w: 48, h: 32, lbl: 'ASSIGN\nTASKS', act: 'assign_tasks', col: '#1a3a2a' },
+    { x: 72, y: 112, w: 48, h: 48, lbl: 'CRAFT', act: 'craft', spr: 'craftstation' },
+    { x: 14, y: 164, w: 52, h: 36, lbl: 'UPGRADE', act: 'upgrade', col: '#443322' },
+    { x: 96, y: 156, w: 56, h: 44, lbl: 'STORAGE', act: 'storage', col: '#333355' },
+    { x: 46, y: 204, w: 64, h: 28, lbl: 'EXIT', act: 'exit_factory', portal: true, col: '#664422' },
   ]
 };
 
@@ -1846,6 +1850,23 @@ function drawTiles() {
     }
     return;
   }
+  if (gameState.scene === 'FACTORY') {
+    const splitX = getFactorySplitX();
+    for (let y = 0; y < CANVAS_H; y += TILE_SIZE) {
+      const r = Math.floor(y / TILE_SIZE);
+      for (let x = 0; x < CANVAS_W; x += TILE_SIZE) {
+        const c = Math.floor(x / TILE_SIZE);
+        const inLeft = x < splitX;
+        let tileId = 'floor_unfinished';
+        if (inLeft) {
+          if (r === 0 || r === 14 || c === 0 || x + TILE_SIZE >= splitX) tileId = 'factory_wall';
+          else tileId = 'factory_floor';
+        }
+        ctx.drawImage(getTile(tileId), x, y);
+      }
+    }
+    return;
+  }
   const map = TILE_MAPS[gameState.scene];
   const mapRows = map.length;
   const mapCols = map[0].length;
@@ -1929,11 +1950,12 @@ function drawSceneDecor() {
     }
   }
   if (gameState.scene === 'FACTORY') {
-    for (let c = 0; c < CANVAS_W; c += 16) {
+    const splitX = getFactorySplitX();
+    for (let c = 0; c < splitX; c += 16) {
       ctx.fillStyle = c % 32 < 16 ? PALETTE.yellow : '#111';
       ctx.fillRect(c, CANVAS_H - 16, 16, 4);
     }
-    for (let c = 32; c < CANVAS_W; c += 64) {
+    for (let c = 20; c < splitX - 24; c += 52) {
       ctx.fillStyle = '#888860';
       ctx.fillRect(c, 0, 16, 4);
       ctx.fillStyle = 'rgba(255,255,200,0.1)';
@@ -1942,50 +1964,70 @@ function drawSceneDecor() {
       ctx.fill();
     }
     ctx.fillStyle = PALETTE.factConveyor;
-    ctx.fillRect(80, 80, 160, 12);
-    for (let c = 80; c < 240; c += 12) {
+    ctx.fillRect(16, 78, splitX - 28, 12);
+    for (let c = 16; c < splitX - 12; c += 12) {
       ctx.fillStyle = c % 24 < 12 ? PALETTE.factConveyor : PALETTE.factConveyor2;
-      ctx.fillRect(c, 80, 12, 12);
+      ctx.fillRect(c, 78, 12, 12);
     }
     ctx.fillStyle = PALETTE.factMachineLight;
-    ctx.fillRect(80, 80, 160, 2);
+    ctx.fillRect(16, 78, splitX - 28, 2);
     if (gameState.factoryLv >= 2) {
       ctx.fillStyle = PALETTE.factConveyor;
-      ctx.fillRect(80, 96, 160, 12);
-      for (let c = 80; c < 240; c += 12) {
+      ctx.fillRect(16, 94, splitX - 28, 12);
+      for (let c = 16; c < splitX - 12; c += 12) {
         ctx.fillStyle = c % 24 < 12 ? PALETTE.factConveyor : PALETTE.factConveyor2;
-        ctx.fillRect(c, 96, 12, 12);
+        ctx.fillRect(c, 94, 12, 12);
       }
       ctx.fillStyle = PALETTE.factMachineLight;
-      ctx.fillRect(80, 96, 160, 2);
+      ctx.fillRect(16, 94, splitX - 28, 2);
     }
     if (gameState.factoryLv >= 3) {
       const blinkOn = Math.floor(Date.now() / 500) % 2 === 0;
       const bright = ['#00ff66', '#ffd255', '#66ddff'];
       const dim = ['#0a4422', '#554a1a', '#1f3f55'];
-      [40, 120, 200].forEach((x, i) => {
+      [30, 78, 126].forEach((x, i) => {
         ctx.fillStyle = blinkOn ? bright[i] : dim[i];
         ctx.fillRect(x, 8, 4, 4);
       });
     }
     if (gameState.factoryLv >= 4) {
       ctx.fillStyle = 'rgba(255,120,0,0.10)';
-      ctx.fillRect(0, CANVAS_H - 36, CANVAS_W, 8);
+      ctx.fillRect(0, CANVAS_H - 36, splitX, 8);
       ctx.fillStyle = 'rgba(255,170,0,0.16)';
-      ctx.fillRect(0, CANVAS_H - 28, CANVAS_W, 8);
+      ctx.fillRect(0, CANVAS_H - 28, splitX, 8);
       ctx.fillStyle = 'rgba(255,210,60,0.22)';
-      ctx.fillRect(0, CANVAS_H - 20, CANVAS_W, 8);
+      ctx.fillRect(0, CANVAS_H - 20, splitX, 8);
       ctx.fillStyle = 'rgba(255,240,120,0.16)';
-      ctx.fillRect(0, CANVAS_H - 12, CANVAS_W, 8);
+      ctx.fillRect(0, CANVAS_H - 12, splitX, 8);
     }
     if (gameState.factoryLv >= 5) {
-      drawLabel('FULL PRODUCTION', 102, 18, {
+      drawLabel('FULL PRODUCTION', 24, 18, {
         size: 6,
         color: '#ffe86e',
         bg: 'rgba(70,30,0,0.55)',
         border: 'rgba(255,220,100,0.9)'
       });
     }
+    ctx.fillStyle = 'rgba(5, 5, 10, 0.74)';
+    ctx.fillRect(splitX, 0, CANVAS_W - splitX, CANVAS_H);
+    ctx.strokeStyle = '#6f5d3e';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(splitX + 0.5, 8.5, CANVAS_W - splitX - 9, CANVAS_H - 17);
+    ctx.strokeStyle = '#d0a22f';
+    for (let y = 12; y < CANVAS_H - 10; y += 24) {
+      ctx.beginPath();
+      ctx.moveTo(splitX + 8, y);
+      ctx.lineTo(CANVAS_W - 10, y + 14);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(34, 34, 34, 0.65)';
+    ctx.fillRect(splitX + 14, 44, CANVAS_W - splitX - 28, 78);
+    drawLabel('EXPANSION\nUNDER CONSTRUCTION', splitX + 18, 20, {
+      size: 6,
+      color: '#f2d38a',
+      bg: 'rgba(0,0,0,0.75)',
+      border: 'rgba(210,162,47,0.55)'
+    });
   }
 }
 
@@ -2269,24 +2311,21 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
     doHomeUpgrade();
   } else if (a === 'exit_home') {
     if (!gameState.clothed) { log('You must be dressed before going outside!', 'b'); return; }
-    const opts = getTravelOpts();
-    modal('LEAVE HOME', 'How will you travel?', opts.map(o => o.label), i => {
-      if (gameState.time < 8 * 60 && !gameState.morningRoutineDone && new Set(gameState.morningActions || []).size >= 2) {
-        gameState.energy = cap(gameState.energy + 10);
-        gameState.hunger = cap(gameState.hunger + 5);
-        gameState.morningRoutineDone = true;
-        gameState.morningRoutineCount = (gameState.morningRoutineCount || 0) + 1;
-        log('Morning routine complete! +10 energy, +5 hunger', 'g');
-        checkQuest('well_prepared');
-      }
-      doTravel(opts[i], 'STREET', 108, 96);
-    });
+    if (gameState.time < 8 * 60 && !gameState.morningRoutineDone && new Set(gameState.morningActions || []).size >= 2) {
+      gameState.energy = cap(gameState.energy + 10);
+      gameState.hunger = cap(gameState.hunger + 5);
+      gameState.morningRoutineDone = true;
+      gameState.morningRoutineCount = (gameState.morningRoutineCount || 0) + 1;
+      log('Morning routine complete! +10 energy, +5 hunger', 'g');
+      checkQuest('well_prepared');
+    }
+    changeScene('STREET', 108, 96);
   } else if (a === 'enter_home') {
     changeScene('HOME', 96, 120);
   } else if (a === 'enter_factory') {
     if (!gameState.clothed) { log('You cannot enter without clothing.', 'b'); return; }
     const opts = getTravelOpts();
-    modal('GO TO FACTORY', 'Choose your travel method:', opts.map(o => o.label), i => doTravel(opts[i], 'FACTORY', 80, 170));
+    modal('GO TO FACTORY', 'Choose your travel method:', opts.map(o => o.label), i => doTravel(opts[i], 'FACTORY', 78, 186));
   } else if (a === 'exit_factory') {
     const undone = gameState.tasks.filter(t => !t).length;
     if (undone > 0 && !gameState.shiftDone) {
@@ -3470,7 +3509,10 @@ function moveP() {
   else player.frame = 0;
   if (handleStreetSideTransition(dx)) { passive(); return; }
   const homeMaxX = getHomeSplitX() - 10;
-  const maxX = gameState.scene === 'HOME' ? homeMaxX : CANVAS_W - 10;
+  const factoryMaxX = getFactorySplitX() - 10;
+  let maxX = CANVAS_W - 10;
+  if (gameState.scene === 'HOME') maxX = homeMaxX;
+  else if (gameState.scene === 'FACTORY') maxX = factoryMaxX;
   const nx = Math.max(4, Math.min(maxX, player.x + dx));
   const ny = Math.max(4, Math.min(CANVAS_H - 24, player.y + dy));
   let blocked = false;
@@ -3832,6 +3874,10 @@ function applyLoad(raw) {
       if (!n.dialog || n.dialog.length < 5) n.dialog = prof.dialog;
       if (n.minTownLv === undefined && prof.minTownLv !== undefined) n.minTownLv = prof.minTownLv;
     });
+    const factoryNpcMaxX = getFactorySplitX() - 14;
+    gameState.npcs.forEach(n => {
+      if (n.scene === 'FACTORY') n.x = clampInt(n.x, 8, factoryNpcMaxX, 24);
+    });
     if (gameState.datingPartnerId && !gameState.npcs.find(n => n.id === gameState.datingPartnerId)) gameState.datingPartnerId = null;
     const missingNpcs = [
       { id: 'maya', name: 'MAYA', x: 108, y: 168, scene: 'STREET', spr: 'npc_maya', friendship: 0 },
@@ -3843,7 +3889,9 @@ function applyLoad(raw) {
       const prof = npcProfiles[base.id];
       gameState.npcs.push({ ...base, role: prof.role, schedule: prof.schedule, gift: prof.gift, perk: prof.perk, dialog: prof.dialog, minTownLv: prof.minTownLv });
     });
-    const px = clampInt(data.playerPos?.x, 0, CANVAS_W - TILE_SIZE, player.x);
+    const factoryLoadMaxX = getFactorySplitX() - 10;
+    const maxLoadX = gameState.scene === 'FACTORY' ? factoryLoadMaxX : CANVAS_W - TILE_SIZE;
+    const px = clampInt(data.playerPos?.x, 0, maxLoadX, player.x);
     const py = clampInt(data.playerPos?.y, 0, CANVAS_H - TILE_SIZE, player.y);
     if (data.playerPos) player.facing = clampInt(data.playerPos.facing, 0, 3, 2);
     refreshDailyTaskUI();
