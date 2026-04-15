@@ -22,7 +22,7 @@
   width: 640px;
   max-width: 100%;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(9, 1fr);
   gap: 4px;
   margin-bottom: 5px;
 }
@@ -236,6 +236,7 @@ canvas {
 <div id="hud">
   <div class="hb"><span class="hl">TIME</span><span class="hv" id="ht">6:00AM</span></div>
   <div class="hb"><span class="hl">DAY</span><span class="hv" id="hd">Mon 1</span></div>
+  <div class="hb"><span class="hl">SEASON</span><span class="hv" id="hs">Spring</span></div>
   <div class="hb"><span class="hl">MONEY</span><span class="hv g" id="hm">$45</span></div>
   <div class="hb"><span class="hl">HUNGER</span><span class="hv" id="hh">100%</span></div>
   <div class="hb"><span class="hl">ENERGY</span><span class="hv" id="he">100%</span></div>
@@ -274,6 +275,15 @@ canvas.width = 320;
 canvas.height = 240;
 const CANVAS_W = 320, CANVAS_H = 240, TILE_SIZE = 16;
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const SEASON_SETTINGS = {
+  daysPerSeason: 7,
+  seasons: [
+    { name: 'Spring', energyDrainMult: 0.97, travelTimeMult: 0.98, craftPayMult: 1.05 },
+    { name: 'Summer', energyDrainMult: 1.08, travelTimeMult: 0.95, craftPayMult: 0.97 },
+    { name: 'Fall', energyDrainMult: 1.0, travelTimeMult: 1.0, craftPayMult: 1.03 },
+    { name: 'Winter', energyDrainMult: 0.93, travelTimeMult: 1.12, craftPayMult: 0.95 },
+  ],
+};
 
 const PALETTE = {
   black: '#000000',
@@ -894,6 +904,8 @@ const HOME_UPGRADES = [
 const gameState = {
   time: 6 * 60,
   day: 1,
+  seasonIndex: 0,
+  seasonDay: 1,
   money: 45,
   hunger: 100,
   energy: 100,
@@ -1341,7 +1353,7 @@ function setupSharedState(state) {
     tasks: {},
   };
 
-  ['time', 'day', 'arrivedToday', 'dayOver', 'shiftDone'].forEach(k => mapSystemField(systems.time, state, k));
+  ['time', 'day', 'seasonIndex', 'seasonDay', 'arrivedToday', 'dayOver', 'shiftDone'].forEach(k => mapSystemField(systems.time, state, k));
   ['money', 'hunger', 'energy', 'clothed', 'rep', 'disciplines', 'weeklyPay', 'travelMethod'].forEach(k => mapSystemField(systems.player, state, k));
   ['npcs', 'giftedToday', 'totalGiftsGiven', 'ritaWarnedToday', 'freeCoffeeUsed'].forEach(k => mapSystemField(systems.relationships, state, k));
   ['scene', 'factoryLv', 'townLv', 'wage', 'factoryXP', 'townXP', 'storyChapter', 'storyFlags'].forEach(k => mapSystemField(systems.town, state, k));
@@ -1366,6 +1378,24 @@ function addGameMinutes(minutes, reason = 'time_pass') {
     for (let h = startHour + 1; h <= endHour; h++) {
       gameState.emit('hour_change', { previousHour: h - 1, hour: h % 24, time: gameState.time, reason });
     }
+  }
+}
+
+
+function getSeason() {
+  return SEASON_SETTINGS.seasons[gameState.seasonIndex] || SEASON_SETTINGS.seasons[0];
+}
+
+function getSeasonName() {
+  return getSeason().name;
+}
+
+function advanceSeasonForNewDay() {
+  gameState.seasonDay = (gameState.seasonDay || 1) + 1;
+  if (gameState.seasonDay > SEASON_SETTINGS.daysPerSeason) {
+    gameState.seasonDay = 1;
+    gameState.seasonIndex = (gameState.seasonIndex + 1) % SEASON_SETTINGS.seasons.length;
+    log(`Season changed: ${getSeasonName()}.`, 'g');
   }
 }
 
@@ -2117,7 +2147,9 @@ function getTravelOpts() {
 function doTravel(opt, scene, px, py) {
   if (!opt) return;
   if (opt.cost > 0 && !pay(opt.cost)) { log('Not enough money for this travel option.', 'b'); return; }
-  addGameMinutes(opt.time, 'travel');
+  const season = getSeason();
+  const travelTime = Math.max(1, Math.round(opt.time * season.travelTimeMult));
+  addGameMinutes(travelTime, 'travel');
   changeScene(scene, px, py);
   if (scene === 'FACTORY' && !gameState.arrivedToday) {
     gameState.arrivedToday = true;
@@ -2130,6 +2162,7 @@ function doTravel(opt, scene, px, py) {
       log(`LATE by ${late} min!  Disciplined.  -$${pen}  (Total: ${gameState.disciplines})`, 'b');
     } else log('Arrived on time! Complete the 3 morning tasks first.', 'g');
   }
+  if (travelTime !== opt.time) log(`${season.name} travel effect: ${opt.time} min → ${travelTime} min.`, '');
 }
 
 function getCraftEnergy(c) {
@@ -2157,6 +2190,11 @@ function matLabel(mat) {
 function getCraftTime(c) {
   if (!gameState.newEquipment) return c.time;
   return Math.max(5, Math.floor(c.time * 0.9));
+}
+
+function getCraftPay(c) {
+  const season = getSeason();
+  return Math.max(1, Math.round(c.pay * season.craftPayMult));
 }
 
 function doAssignTasks() {
@@ -2197,7 +2235,7 @@ function doCraft() {
   modal('CRAFT STATION', 'Choose what to make:', [...avail.map(c => {
     const e = getCraftEnergy(c);
     const t = getCraftTime(c);
-    return `${c.label}  +$${c.pay}  (${t}min, -${e}en)${matLabel(c.mat)}`;
+    return `${c.label}  +$${getCraftPay(c)}  (${t}min, -${e}en)${matLabel(c.mat)}`;
   }), 'DELIVER', 'Cancel'], i => {
     if (i === avail.length) { doContractBoard(); return; }
     if (i > avail.length) return;
@@ -2212,14 +2250,16 @@ function doCraft() {
       if (c.mat.wire) gameState.inventory.wire -= c.mat.wire;
       if (c.mat.circuit) gameState.inventory.circuit -= c.mat.circuit;
     }
+    const craftPay = getCraftPay(c);
     addGameMinutes(t, 'craft');
     gameState.energy = Math.max(0, gameState.energy - e);
-    addMoney(c.pay);
-    gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + c.pay;
-    gameState.factoryXP += c.pay;
+    addMoney(craftPay);
+    gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + craftPay;
+    gameState.factoryXP += craftPay;
     gameState.craftedToday++;
     gameState.totalCrafted++;
-    log(`Crafted: ${c.label}  +$${c.pay}`, 'g');
+    log(`Crafted: ${c.label}  +$${craftPay}`, 'g');
+    if (craftPay !== c.pay) log(`${getSeasonName()} crafting effect applied (${c.pay > craftPay ? 'penalty' : 'bonus'}).`, '');
     deliverCraftToContracts(c.id);
     checkFactoryLv();
     checkQuest('productive_worker');
@@ -2631,6 +2671,7 @@ function doSleep() {
     gameState.morningActions = [];
     gameState.morningRoutineDone = false;
     updateContractsForNewDay();
+    advanceSeasonForNewDay();
     gameState.day++;
     gameState.emit('day_start', { day: gameState.day, time: gameState.time });
     gameState.hunger = Math.max(gameState.hunger - 10, 20);
@@ -2894,7 +2935,9 @@ function passive() {
   if (inventory.lunchbox) _hDrain *= 0.8;
   if (gameState.vitaminsToday) _hDrain *= 0.5;
   playerState.hunger = Math.max(0, playerState.hunger - _hDrain);
-  const energyDrain = inventory.thermos ? 0.15 * 0.85 : 0.15;
+  const season = getSeason();
+  const baseEnergyDrain = inventory.thermos ? 0.15 * 0.85 : 0.15;
+  const energyDrain = baseEnergyDrain * season.energyDrainMult;
   playerState.energy = Math.max(0, playerState.energy - energyDrain);
   if (gameState.ottoWorkTimer > 0) {
     gameState.ottoWorkTimer = Math.max(0, gameState.ottoWorkTimer - 1);
@@ -2974,6 +3017,9 @@ function updateHUD() {
   const { time, player, tasks: taskSystem, town } = gameState.systems;
   document.getElementById('ht').textContent = formatTime(time.time);
   document.getElementById('hd').textContent = DAYS[(time.day - 1) % 7] + ' ' + time.day;
+  const hs = document.getElementById('hs');
+  hs.textContent = getSeasonName();
+  hs.className = 'hv ' + (getSeasonName() === 'Winter' ? 'w' : getSeasonName() === 'Summer' ? 'd' : 'g');
   const me = document.getElementById('hm');
   me.textContent = '$' + player.money;
   me.className = 'hv ' + (player.money < 10 ? 'd' : player.money < 30 ? 'w' : 'g');
@@ -3096,7 +3142,7 @@ window.showInventory = () => {
   if (md) md.style.color = carryUsed >= gameState.carryLimit ? '#ff7777' : (carryUsed >= gameState.carryLimit * 0.8 ? '#ffd455' : '#8fe7a1');
 };
 window.showStatus = () => {
-  modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}  ${getRepTitle()}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
+  modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\nSeason: ${getSeasonName()} (Day ${gameState.seasonDay}/${SEASON_SETTINGS.daysPerSeason})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}  ${getRepTitle()}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
 };
 
 // ── SAVE / LOAD ───────────────────────────────────────────────────────────
@@ -3125,6 +3171,10 @@ function applyLoad(raw) {
     if (gameState.moneyEarnedToday === undefined) gameState.moneyEarnedToday = 0;
     if (gameState.materialsBought === undefined) gameState.materialsBought = 0;
     if (!Array.isArray(gameState.dailyTasks) || gameState.dailyTasks.length !== 3) gameState.dailyTasks = ['sweep', 'boiler', 'log_parts'];
+    if (gameState.seasonIndex === undefined) gameState.seasonIndex = 0;
+    if (gameState.seasonDay === undefined) gameState.seasonDay = ((gameState.day - 1) % SEASON_SETTINGS.daysPerSeason) + 1;
+    gameState.seasonIndex = Math.max(0, Math.min(SEASON_SETTINGS.seasons.length - 1, gameState.seasonIndex));
+    gameState.seasonDay = Math.max(1, Math.min(SEASON_SETTINGS.daysPerSeason, gameState.seasonDay));
     if (!gameState.assignedTasks) gameState.assignedTasks = { 0: null, 1: null, 2: null };
     if (gameState.ottoWorkTimer === undefined) gameState.ottoWorkTimer = 0;
     if (gameState.ottoTasksCompleted === undefined) gameState.ottoTasksCompleted = 0;
