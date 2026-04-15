@@ -254,6 +254,7 @@ canvas {
   <span id="sb-warn"></span>
   <span id="sb-rep">Rep: ★★★☆☆  Respected</span>
   <span id="sb-disc">Disciplines: 0</span>
+  <span id="sb-market"></span>
   <span id="sb-story"></span>
 </div>
 <div id="dpad">
@@ -901,6 +902,11 @@ const CONTRACT_TEMPLATES = [
   { title: 'Fall Harvest Crates', item: 'bolt', qty: 10, reward: 88, days: 4, minFactoryLv: 1, season: 'Fall' },
   { title: 'Winter Heater Rush', item: 'processor', qty: 2, reward: 125, days: 4, minFactoryLv: 4, season: 'Winter' },
 ];
+const COMPETITOR_FACTIONS = [
+  { id: 'ironclad', name: 'Ironclad Works', style: 'Aggressive pricing' },
+  { id: 'northstar', name: 'Northstar Tools', style: 'Bulk contracts' },
+  { id: 'rivetline', name: 'Rivetline Co.', style: 'Fast delivery' },
+];
 const NPC_SPILLOVER = {
   boss: { otto: 1 },
   otto: { boss: 1 },
@@ -1063,6 +1069,9 @@ const gameState = {
     { id: 'bike', label: 'BIKE  — 10 min, free', time: 10, cost: 0, requires: 'bike' },
     { id: 'bus', label: 'BUS  — 5 min, $2', time: 5, cost: 2, requires: 'bus_pass' },
   ],
+  competitors: COMPETITOR_FACTIONS.map(c => ({ id: c.id, name: c.name, style: c.style, pressure: 0 })),
+  marketEvent: null,
+  marketEventHistory: [],
   quests: [
     {
       id: 'first_day',
@@ -1379,7 +1388,7 @@ function setupSharedState(state) {
   ['time', 'day', 'seasonIndex', 'seasonDay', 'arrivedToday', 'dayOver', 'shiftDone'].forEach(k => mapSystemField(systems.time, state, k));
   ['money', 'hunger', 'energy', 'clothed', 'rep', 'disciplines', 'weeklyPay', 'travelMethod'].forEach(k => mapSystemField(systems.player, state, k));
   ['npcs', 'giftedToday', 'totalGiftsGiven', 'ritaWarnedToday', 'freeCoffeeUsed', 'datingPartnerId', 'datingDialogueUsedToday'].forEach(k => mapSystemField(systems.relationships, state, k));
-  ['scene', 'factoryLv', 'townLv', 'wage', 'factoryXP', 'townXP', 'storyChapter', 'storyFlags'].forEach(k => mapSystemField(systems.town, state, k));
+  ['scene', 'factoryLv', 'townLv', 'wage', 'factoryXP', 'townXP', 'storyChapter', 'storyFlags', 'competitors', 'marketEvent'].forEach(k => mapSystemField(systems.town, state, k));
   ['contracts', 'availableContracts', 'contractRefreshDay', 'contractsCompleted', 'contractStreak', 'clutchContract'].forEach(k => mapSystemField(systems.contracts, state, k));
   ['tasks', 'dailyTasks', 'taskNames', 'assignedTasks', 'ottoWorkTimer', 'ottoTasksCompleted', 'diversifiedToday'].forEach(k => mapSystemField(systems.tasks, state, k));
 
@@ -1433,7 +1442,79 @@ function advanceSeasonForNewDay() {
 }
 
 setupSharedState(gameState);
-gameState.on('day_start', ({ day }) => log(`Day ${day} systems reset.`, ''));
+
+function getContractEventModifiers() {
+  const ev = gameState.marketEvent;
+  if (!ev) return { rewardMult: 1, dayDelta: 0, repBonus: 0, label: '' };
+  return {
+    rewardMult: ev.rewardMult || 1,
+    dayDelta: ev.dayDelta || 0,
+    repBonus: ev.repBonus || 0,
+    label: ev.shortLabel || '',
+  };
+}
+
+function maybeTriggerMarketEvent(day) {
+  const current = gameState.marketEvent;
+  if (current && day > current.expiresDay) {
+    log(`Market normalizes after ${current.sourceName}'s move.`, 'g');
+    gameState.marketEvent = null;
+    gameState.emit('market_event_changed', { event: null, day });
+  }
+  if (gameState.marketEvent) return;
+  if (day <= 2) return;
+  if (day % 2 !== 0 && Math.random() > 0.22) return;
+  if (Math.random() > 0.45) return;
+
+  const source = COMPETITOR_FACTIONS[Math.floor(Math.random() * COMPETITOR_FACTIONS.length)];
+  const rep = gameState.rep;
+  const collaborationRoll = Math.random() < (0.42 + Math.max(0, rep - 2) * 0.08);
+  let event;
+
+  if (collaborationRoll) {
+    const rewardMult = rep >= 4 ? 1.14 : rep >= 2 ? 1.1 : 1.07;
+    event = {
+      type: 'collaboration',
+      sourceId: source.id,
+      sourceName: source.name,
+      shortLabel: `🤝 Collab: ${source.name}`,
+      rewardMult,
+      dayDelta: rep >= 3 ? 1 : 0,
+      repBonus: rep >= 3 ? 0.15 : 0.1,
+      expiresDay: day + 1,
+      message: `${source.name} offers a limited collaboration. Contract rewards are up ${Math.round((rewardMult - 1) * 100)}%.`,
+    };
+    log(`COLLAB EVENT: ${event.message}`, 'g');
+  } else {
+    const rewardMult = rep >= 4 ? 0.92 : rep >= 2 ? 0.88 : 0.84;
+    event = {
+      type: 'price_war',
+      sourceId: source.id,
+      sourceName: source.name,
+      shortLabel: `⚠ Price War: ${source.name}`,
+      rewardMult,
+      dayDelta: -1,
+      repBonus: 0,
+      expiresDay: day + 1,
+      message: `${source.name} slashes prices. New contracts pay ${Math.round((1 - rewardMult) * 100)}% less and are tighter.`,
+    };
+    log(`COMPETITOR EVENT: ${event.message}`, 'w');
+  }
+
+  gameState.marketEvent = event;
+  gameState.marketEventHistory = (gameState.marketEventHistory || []).slice(-5);
+  gameState.marketEventHistory.push({ day, type: event.type, sourceId: event.sourceId });
+  gameState.emit('market_event_changed', { event, day });
+}
+
+function bindSystemEvents() {
+  gameState.on('day_start', ({ day }) => {
+    log(`Day ${day} systems reset.`, '');
+    maybeTriggerMarketEvent(day);
+  });
+}
+
+bindSystemEvents();
 
 const player = { x: 96, y: 130, facing: 2, frame: 0, ft: 0, moving: false };
 const keys = {};
@@ -2938,11 +3019,21 @@ function refreshAvailableContracts(force = false) {
   if (gameState.day < (gameState.contractRefreshDay || 1) && !force) return;
   const pool = CONTRACT_TEMPLATES.filter(c => c.minFactoryLv <= gameState.factoryLv && isSeasonAvailable(c));
   const shuffled = pool.sort(() => Math.random() - 0.5).slice(0, 2);
-  gameState.availableContracts = shuffled.map(t => ({
-    ...t,
-    seasonLabel: getSeasonTag(t.season),
-    id: `offer_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`
-  }));
+  const eventMod = getContractEventModifiers();
+  gameState.availableContracts = shuffled.map(t => {
+    const adjustedReward = Math.max(10, Math.round(t.reward * eventMod.rewardMult));
+    const adjustedDays = Math.max(2, t.days + eventMod.dayDelta);
+    return {
+      ...t,
+      rewardBase: t.reward,
+      daysBase: t.days,
+      reward: adjustedReward,
+      days: adjustedDays,
+      seasonLabel: getSeasonTag(t.season),
+      marketLabel: eventMod.label,
+      id: `offer_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`
+    };
+  });
   gameState.contractRefreshDay = gameState.day + 3;
 }
 
@@ -2962,6 +3053,7 @@ function acceptContract(offerIdx) {
     reward: offer.reward,
     daysLeft: offer.days,
     status: 'active',
+    marketLabel: offer.marketLabel || '',
   });
   gameState.availableContracts.splice(offerIdx, 1);
   log(`Contract accepted: ${offer.title}.`, 'g');
@@ -2971,12 +3063,18 @@ function doContractBoard() {
   refreshAvailableContracts();
   const seasonName = getSeasonName();
   const active = (gameState.contracts || []).filter(c => c.status === 'active');
-  const lines = [`Season: ${seasonName}`, '', 'Active Contracts:'];
+  const ev = gameState.marketEvent;
+  const lines = [`Season: ${seasonName}`, `Market: ${ev ? ev.shortLabel : 'Stable'}`, '', 'Active Contracts:'];
   if (!active.length) lines.push('None');
   active.forEach(c => lines.push(`${c.title}: ${c.delivered}/${c.qty} — ${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`));
   lines.push('', 'Available Orders:');
   if (!gameState.availableContracts.length) lines.push('No new offers yet.');
-  const opts = gameState.availableContracts.map(c => `Accept: ${c.title}${c.seasonLabel || ''} (${c.qty} ${c.item})  $${c.reward}  ${c.days}d`);
+  const opts = gameState.availableContracts.map(c => {
+    const delta = c.reward - (c.rewardBase || c.reward);
+    const deltaText = delta === 0 ? '' : ` (${delta > 0 ? '+' : ''}${delta})`;
+    const marketTag = c.marketLabel ? `  ${c.marketLabel}` : '';
+    return `Accept: ${c.title}${c.seasonLabel || ''} (${c.qty} ${c.item})  $${c.reward}${deltaText}  ${c.days}d${marketTag}`;
+  });
   const seasonalLocked = CONTRACT_TEMPLATES
     .filter(c => c.season && c.minFactoryLv <= gameState.factoryLv && !isSeasonAvailable(c))
     .map(c => `${c.title}${getSeasonTag(c.season)}`);
@@ -3000,6 +3098,11 @@ function deliverCraftToContracts(itemId) {
     gameState.contractsCompleted = (gameState.contractsCompleted || 0) + 1;
     gameState.contractStreak = (gameState.contractStreak || 0) + 1;
     if (c.daysLeft === 1) gameState.clutchContract = true;
+    const mod = getContractEventModifiers();
+    if (mod.repBonus > 0) {
+      gameState.rep = Math.min(5, gameState.rep + mod.repBonus);
+      log(`Collaboration bonus: +${mod.repBonus.toFixed(2)} rep.`, 'g');
+    }
     log(`CONTRACT COMPLETE: ${c.title} — +$${c.reward}!`, 'w');
     checkQuest('first_contract');
     checkQuest('contract_worker');
@@ -3014,7 +3117,8 @@ function updateContractsForNewDay() {
     c.daysLeft--;
     if (c.daysLeft <= 0 && c.delivered < c.qty) {
       c.status = 'failed';
-      gameState.rep = Math.max(0, gameState.rep - 0.2);
+      const extraPenalty = gameState.marketEvent && gameState.marketEvent.type === 'price_war' ? 0.1 : 0;
+      gameState.rep = Math.max(0, gameState.rep - 0.2 - extraPenalty);
       gameState.contractStreak = 0;
       log(`CONTRACT FAILED: ${c.title}. No payment.`, 'b');
       checkQuest('on_schedule');
@@ -3154,6 +3258,16 @@ function updateHUD() {
   const sw = document.getElementById('sb-warn');
   sw.textContent = w.join('   ');
   sw.className = w.length ? 'sb-warn' : '';
+  const sbMarket = document.getElementById('sb-market');
+  if (gameState.marketEvent) {
+    const ev = gameState.marketEvent;
+    const daysLeft = Math.max(0, ev.expiresDay - gameState.day + 1);
+    sbMarket.textContent = `${ev.shortLabel} (${daysLeft}d)`;
+    sbMarket.className = ev.type === 'price_war' ? 'sb-warn' : 'sb-story-win';
+  } else {
+    sbMarket.textContent = 'Market: Stable';
+    sbMarket.className = '';
+  }
   const sbStory = document.getElementById('sb-story');
   sbStory.className = '';
   if (gameState.storyChapter >= 1 && gameState.storyChapter < 5) {
@@ -3251,7 +3365,7 @@ window.showInventory = () => {
   if (md) md.style.color = carryUsed >= gameState.carryLimit ? '#ff7777' : (carryUsed >= gameState.carryLimit * 0.8 ? '#ffd455' : '#8fe7a1');
 };
 window.showStatus = () => {
-  modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\nSeason: ${getSeasonName()} (Day ${gameState.seasonDay}/${SEASON_SETTINGS.daysPerSeason})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}  ${getRepTitle()}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
+  modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\nSeason: ${getSeasonName()} (Day ${gameState.seasonDay}/${SEASON_SETTINGS.daysPerSeason})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}  ${getRepTitle()}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nMarket: ${gameState.marketEvent ? gameState.marketEvent.shortLabel : 'Stable'}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
 };
 
 // ── SAVE / LOAD ───────────────────────────────────────────────────────────
@@ -3273,6 +3387,7 @@ function applyLoad(raw) {
     const data = JSON.parse(raw);
     Object.assign(gameState, data.gameState);
     setupSharedState(gameState);
+    bindSystemEvents();
     if (!gameState.quests) gameState.quests = [];
     if (gameState.totalCrafted === undefined) gameState.totalCrafted = 0;
     if (gameState.totalEarned === undefined) gameState.totalEarned = 0;
@@ -3310,6 +3425,9 @@ function applyLoad(raw) {
     if (gameState.datingDialogueUsedToday === undefined) gameState.datingDialogueUsedToday = false;
     if (gameState.vitaminsToday === undefined) gameState.vitaminsToday = false;
     if (gameState.attendedEventToday === undefined) gameState.attendedEventToday = false;
+    if (!Array.isArray(gameState.competitors)) gameState.competitors = COMPETITOR_FACTIONS.map(c => ({ id: c.id, name: c.name, style: c.style, pressure: 0 }));
+    if (gameState.marketEvent === undefined) gameState.marketEvent = null;
+    if (!Array.isArray(gameState.marketEventHistory)) gameState.marketEventHistory = [];
     if (gameState.storyChapter === undefined) gameState.storyChapter = 0;
     if (!gameState.storyFlags) gameState.storyFlags = {};
     if (gameState.storyDayLimit === undefined) gameState.storyDayLimit = 30;
