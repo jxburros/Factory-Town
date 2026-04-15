@@ -285,6 +285,49 @@ const SEASON_SETTINGS = {
     { name: 'Winter', energyDrainMult: 0.93, travelTimeMult: 1.12, craftPayMult: 0.95 },
   ],
 };
+const BALANCE = {
+  passive: {
+    hungerDrainPerMinute: 0.34,
+    energyDrainPerMinute: 0.12,
+    thermosEnergyMult: 0.85,
+    lunchboxHungerMult: 0.8,
+    vitaminsHungerMult: 0.5,
+    lowHungerFloorOnWake: 20,
+  },
+  progression: {
+    startMoney: 50,
+    baseWage: 38,
+    taskCompletionBonus: 10,
+    wagePerCraftedItem: 2,
+    respectedWageBonus: 4,
+    bossWageBonus: 6,
+    fullProductionWageBonus: 12,
+    dailyRent: 10,
+    partialSleepEnergyRestore: 70,
+    dailyHungerLossOnWake: 9,
+  },
+  relationship: {
+    datingPassiveEnergyRegen: 0.06,
+    datingWorkSpeedMult: 0.93,
+    befriendRepGain: 0.15,
+    favoriteGiftFriendship: 2,
+    regularGiftFriendship: 1,
+  },
+  travel: {
+    walkTime: 18,
+    bikeTime: 9,
+    busTime: 6,
+    busTripCost: 3,
+    bikeCost: 52,
+    busPassCost: 12,
+  },
+  crafting: {
+    toolbeltEnergyMult: 0.82,
+    improvedToolsTaskMult: 0.92,
+    glovesTaskMult: 0.88,
+    newEquipmentTimeMult: 0.92,
+  },
+};
 
 const PALETTE = {
   black: '#000000',
@@ -850,28 +893,28 @@ function makePlayer(key, frame, facing, clothed, uniform) {
 }))));
 
 const taskPool = [
-  { id: 'sweep', label: 'SWEEP FLOOR', time: 15, energy: 8, xp: 5, description: 'Clean the factory floor.' },
-  { id: 'boiler', label: 'CHECK BOILER', time: 15, energy: 8, xp: 5, description: 'Inspect and log boiler pressure.' },
-  { id: 'log_parts', label: 'LOG PARTS', time: 15, energy: 6, xp: 5, description: 'Count and record parts in stock.' },
-  { id: 'oil_machines', label: 'OIL MACHINES', time: 20, energy: 12, xp: 8, description: 'Lubricate the conveyor system.' },
-  { id: 'inspect_welds', label: 'INSPECT WELDS', time: 20, energy: 10, xp: 8, description: 'Check weld integrity on frames.' },
-  { id: 'sort_stock', label: 'SORT STOCK', time: 15, energy: 7, xp: 6, description: 'Organize incoming material bins.' },
-  { id: 'test_output', label: 'TEST OUTPUT', time: 25, energy: 14, xp: 10, description: 'Run quality checks on products.' },
-  { id: 'repair_line', label: 'REPAIR LINE', time: 30, energy: 18, xp: 12, description: 'Fix a jammed section of line.' },
+  { id: 'sweep', label: 'SWEEP FLOOR', time: 15, energy: 7, xp: 5, description: 'Clean the factory floor.' },
+  { id: 'boiler', label: 'CHECK BOILER', time: 15, energy: 7, xp: 5, description: 'Inspect and log boiler pressure.' },
+  { id: 'log_parts', label: 'LOG PARTS', time: 15, energy: 5, xp: 5, description: 'Count and record parts in stock.' },
+  { id: 'oil_machines', label: 'OIL MACHINES', time: 20, energy: 10, xp: 8, description: 'Lubricate the conveyor system.' },
+  { id: 'inspect_welds', label: 'INSPECT WELDS', time: 20, energy: 9, xp: 8, description: 'Check weld integrity on frames.' },
+  { id: 'sort_stock', label: 'SORT STOCK', time: 15, energy: 6, xp: 6, description: 'Organize incoming material bins.' },
+  { id: 'test_output', label: 'TEST OUTPUT', time: 25, energy: 12, xp: 10, description: 'Run quality checks on products.' },
+  { id: 'repair_line', label: 'REPAIR LINE', time: 30, energy: 16, xp: 12, description: 'Fix a jammed section of line.' },
 ];
 
 const FACTORY_UPGRADES = [
-  { level: 2, name: 'Improved Tools', cost: 80, description: 'Unlocks Gear recipe. Tasks cost 10% less energy.' },
-  { level: 3, name: 'New Equipment', cost: 160, description: 'Unlocks Motor recipe. Craft station speed +10%.' },
+  { level: 2, name: 'Improved Tools', cost: 80, description: 'Unlocks Gear recipe. Tasks cost 8% less energy.' },
+  { level: 3, name: 'New Equipment', cost: 160, description: 'Unlocks Motor recipe. Craft station speed +8%.' },
   { level: 4, name: 'Automation Line', cost: 280, description: 'Unlocks Processor recipe. Otto works 25% faster.' },
-  { level: 5, name: 'Full Production', cost: 400, description: 'Unlocks all recipes. +$15 base wage. Town reaches City.' },
+  { level: 5, name: 'Full Production', cost: 400, description: 'Unlocks all recipes. +$12 base wage. Town reaches City.' },
 ];
 
 const REPUTATION_TIERS = [
   { min: 0, max: 0.9, title: 'Unknown', effect: 'No bonuses' },
   { min: 1, max: 1.9, title: 'Newcomer', effect: 'NPCs are slightly friendlier (+1 dialog unlock)' },
   { min: 2, max: 2.9, title: 'Regular', effect: 'Diner gives free coffee once per day' },
-  { min: 3, max: 3.9, title: 'Respected', effect: 'Factory wage +$5 passive bonus' },
+  { min: 3, max: 3.9, title: 'Respected', effect: 'Factory wage +$4 passive bonus' },
   { min: 4, max: 4.9, title: 'Pillar', effect: 'All shop prices reduced by 10%' },
   { min: 5, max: 5, title: 'Town Legend', effect: 'All perks active regardless of friendship level' },
 ];
@@ -885,22 +928,22 @@ const RELATIONSHIP_TIERS = [
 const DATING_THRESHOLDS = {
   startDatingFriendship: 4,
   startDatingRep: 3,
-  passiveEnergyRegen: 0.08,
-  workSpeedMult: 0.9,
+  passiveEnergyRegen: BALANCE.relationship.datingPassiveEnergyRegen,
+  workSpeedMult: BALANCE.relationship.datingWorkSpeedMult,
 };
 
 
 const CONTRACT_TEMPLATES = [
-  { title: 'Bolt Bulk Order', item: 'bolt', qty: 8, reward: 65, days: 4, minFactoryLv: 1 },
-  { title: 'Gear Shipment', item: 'gear', qty: 5, reward: 80, days: 4, minFactoryLv: 1 },
-  { title: 'Motor Contract', item: 'motor', qty: 3, reward: 95, days: 5, minFactoryLv: 3 },
-  { title: 'Processor Order', item: 'processor', qty: 2, reward: 110, days: 5, minFactoryLv: 4 },
-  { title: 'Emergency Bolts', item: 'bolt', qty: 12, reward: 90, days: 3, minFactoryLv: 1 },
-  { title: 'Premium Gears', item: 'gear', qty: 8, reward: 120, days: 5, minFactoryLv: 2 },
-  { title: 'Spring Tune-Up', item: 'gear', qty: 4, reward: 90, days: 4, minFactoryLv: 2, season: 'Spring' },
-  { title: 'Summer Grid Repair', item: 'motor', qty: 2, reward: 85, days: 3, minFactoryLv: 3, season: 'Summer' },
-  { title: 'Fall Harvest Crates', item: 'bolt', qty: 10, reward: 88, days: 4, minFactoryLv: 1, season: 'Fall' },
-  { title: 'Winter Heater Rush', item: 'processor', qty: 2, reward: 125, days: 4, minFactoryLv: 4, season: 'Winter' },
+  { title: 'Bolt Bulk Order', item: 'bolt', qty: 8, reward: 96, days: 4, minFactoryLv: 1 },
+  { title: 'Gear Shipment', item: 'gear', qty: 5, reward: 130, days: 4, minFactoryLv: 1 },
+  { title: 'Motor Contract', item: 'motor', qty: 3, reward: 150, days: 5, minFactoryLv: 3 },
+  { title: 'Processor Order', item: 'processor', qty: 2, reward: 145, days: 5, minFactoryLv: 4 },
+  { title: 'Emergency Bolts', item: 'bolt', qty: 12, reward: 136, days: 3, minFactoryLv: 1 },
+  { title: 'Premium Gears', item: 'gear', qty: 8, reward: 210, days: 5, minFactoryLv: 2 },
+  { title: 'Spring Tune-Up', item: 'gear', qty: 4, reward: 105, days: 4, minFactoryLv: 2, season: 'Spring' },
+  { title: 'Summer Grid Repair', item: 'motor', qty: 2, reward: 108, days: 3, minFactoryLv: 3, season: 'Summer' },
+  { title: 'Fall Harvest Crates', item: 'bolt', qty: 10, reward: 120, days: 4, minFactoryLv: 1, season: 'Fall' },
+  { title: 'Winter Heater Rush', item: 'processor', qty: 2, reward: 154, days: 4, minFactoryLv: 4, season: 'Winter' },
 ];
 const COMPETITOR_FACTIONS = [
   { id: 'ironclad', name: 'Ironclad Works', style: 'Aggressive pricing' },
@@ -929,7 +972,7 @@ const gameState = {
   day: 1,
   seasonIndex: 0,
   seasonDay: 1,
-  money: 45,
+  money: BALANCE.progression.startMoney,
   hunger: 100,
   energy: 100,
   clothed: true,
@@ -948,7 +991,7 @@ const gameState = {
   rep: 3,
   factoryLv: 1,
   townLv: 1,
-  wage: 40,
+  wage: BALANCE.progression.baseWage,
   arrivedToday: false,
   dayOver: false,
   paused: false,
@@ -981,7 +1024,7 @@ const gameState = {
       role: 'Factory Manager',
       schedule: { morning: 'FACTORY', evening: 'STREET' },
       gift: 'coffee_item',
-      perk: { description: '+$8 bonus pay per shift', type: 'wage_bonus', value: 8 },
+      perk: { description: '+$6 bonus pay per shift', type: 'wage_bonus', value: BALANCE.progression.bossWageBonus },
       dialog: ['Get back to work.', "Don't be late again.", "You're pulling your weight.", 'Good worker. Keep it up.', "You're the best on the floor."],
       friendship: 0,
     },
@@ -1047,27 +1090,27 @@ const gameState = {
     { id: 'bread', label: 'BREAD  +40 hunger', cost: 4, type: 'food', hunger: 40 },
     { id: 'coffee', label: 'COFFEE  +30 energy', cost: 3, type: 'food', energy: 30 },
     { id: 'uniform', label: 'UNIFORM  (pay bonus)', cost: 20, type: 'equip' },
-    { id: 'bike', label: 'BIKE  (10min travel)', cost: 35, type: 'travel' },
-    { id: 'bus_pass', label: 'BUS PASS  (5min, $2)', cost: 15, type: 'travel' },
+    { id: 'bike', label: 'BIKE  (9min travel)', cost: BALANCE.travel.bikeCost, type: 'travel' },
+    { id: 'bus_pass', label: 'BUS PASS  (6min, $3)', cost: BALANCE.travel.busPassCost, type: 'travel' },
   ],
   giftedToday: [],
   totalGiftsGiven: 0,
   ritaWarnedToday: false,
   freeCoffeeUsed: false,
   craftItems: [
-    { id: 'bolt', label: 'BASIC BOLT', time: 15, energy: 8, pay: 12, minLv: 1, mat: { scrapMetal: 2 } },
-    { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 24, minLv: 2, mat: { scrapMetal: 3, wire: 1 } },
-    { id: 'motor', label: 'MOTOR', time: 40, energy: 22, pay: 45, minLv: 3, mat: { wire: 2, circuit: 1 } },
-    { id: 'processor', label: 'PROCESSOR', time: 50, energy: 28, pay: 65, minLv: 4, mat: { circuit: 2, wire: 1 } },
-    { id: 'spring_kit', label: 'SPRING TOOL KIT', time: 28, energy: 12, pay: 34, minLv: 2, season: 'Spring', mat: { scrapMetal: 2, wire: 2 } },
-    { id: 'summer_fan', label: 'SUMMER COOLING FAN', time: 32, energy: 14, pay: 38, minLv: 2, season: 'Summer', mat: { scrapMetal: 2, wire: 2 } },
-    { id: 'fall_regulator', label: 'FALL FLOW REGULATOR', time: 36, energy: 16, pay: 42, minLv: 3, season: 'Fall', mat: { scrapMetal: 2, circuit: 1 } },
-    { id: 'winter_core', label: 'WINTER HEATER CORE', time: 42, energy: 20, pay: 50, minLv: 3, season: 'Winter', mat: { wire: 2, circuit: 1 } },
+    { id: 'bolt', label: 'BASIC BOLT', time: 15, energy: 7, pay: 10, minLv: 1, mat: { scrapMetal: 2 } },
+    { id: 'gear', label: 'GEAR', time: 25, energy: 12, pay: 21, minLv: 2, mat: { scrapMetal: 3, wire: 1 } },
+    { id: 'motor', label: 'MOTOR', time: 40, energy: 19, pay: 40, minLv: 3, mat: { wire: 2, circuit: 1 } },
+    { id: 'processor', label: 'PROCESSOR', time: 50, energy: 24, pay: 58, minLv: 4, mat: { circuit: 2, wire: 1 } },
+    { id: 'spring_kit', label: 'SPRING TOOL KIT', time: 28, energy: 11, pay: 30, minLv: 2, season: 'Spring', mat: { scrapMetal: 2, wire: 2 } },
+    { id: 'summer_fan', label: 'SUMMER COOLING FAN', time: 32, energy: 12, pay: 33, minLv: 2, season: 'Summer', mat: { scrapMetal: 2, wire: 2 } },
+    { id: 'fall_regulator', label: 'FALL FLOW REGULATOR', time: 36, energy: 14, pay: 36, minLv: 3, season: 'Fall', mat: { scrapMetal: 2, circuit: 1 } },
+    { id: 'winter_core', label: 'WINTER HEATER CORE', time: 42, energy: 18, pay: 46, minLv: 3, season: 'Winter', mat: { wire: 2, circuit: 1 } },
   ],
   travelOptions: [
-    { id: 'walk', label: 'WALK  — 20 min, free', time: 20, cost: 0 },
-    { id: 'bike', label: 'BIKE  — 10 min, free', time: 10, cost: 0, requires: 'bike' },
-    { id: 'bus', label: 'BUS  — 5 min, $2', time: 5, cost: 2, requires: 'bus_pass' },
+    { id: 'walk', label: `WALK  — ${BALANCE.travel.walkTime} min, free`, time: BALANCE.travel.walkTime, cost: 0 },
+    { id: 'bike', label: `BIKE  — ${BALANCE.travel.bikeTime} min, free`, time: BALANCE.travel.bikeTime, cost: 0, requires: 'bike' },
+    { id: 'bus', label: `BUS  — ${BALANCE.travel.busTime} min, $${BALANCE.travel.busTripCost}`, time: BALANCE.travel.busTime, cost: BALANCE.travel.busTripCost, requires: 'bus_pass' },
   ],
   competitors: COMPETITOR_FACTIONS.map(c => ({ id: c.id, name: c.name, style: c.style, pressure: 0 })),
   marketEvent: null,
@@ -1611,9 +1654,9 @@ function handleDailyTaskCompletion() {
 function completeTaskByIndex(idx, source = 'player') {
   if (gameState.tasks[idx]) return false;
   const task = getDailyTaskByIndex(idx);
-  let energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+  let energyCost = gameState.improvedTools ? Math.floor(task.energy * BALANCE.crafting.improvedToolsTaskMult) : task.energy;
   const taskTime = Math.max(1, Math.round(task.time * getWorkSpeedMultiplier()));
-  if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * 0.85));
+  if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * BALANCE.crafting.glovesTaskMult));
   if (source === 'player') {
     if (gameState.energy < energyCost) { log('Too tired to do that task right now.', 'w'); return false; }
     addGameMinutes(taskTime, 'task_work');
@@ -2229,8 +2272,8 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
     if (gameState.tasks[idx]) { log('Already completed: ' + gameState.taskNames[idx]); return; }
     if (gameState.assignedTasks[idx] === 'otto') { log('Otto is already working on that task.', 'w'); return; }
     const task = getDailyTaskByIndex(idx);
-    let energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
-  if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * 0.85));
+    let energyCost = gameState.improvedTools ? Math.floor(task.energy * BALANCE.crafting.improvedToolsTaskMult) : task.energy;
+    if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * BALANCE.crafting.glovesTaskMult));
     modal(
       task.label,
       `${task.description}\nTime Cost: ${task.time} min\nEnergy Cost: ${energyCost}`,
@@ -2282,7 +2325,7 @@ function doTravel(opt, scene, px, py) {
 }
 
 function getCraftEnergy(c) {
-  return gameState.inventory.toolbelt ? Math.floor(c.energy * 0.8) : c.energy;
+  return gameState.inventory.toolbelt ? Math.floor(c.energy * BALANCE.crafting.toolbeltEnergyMult) : c.energy;
 }
 
 function getMissingMats(c) {
@@ -2304,7 +2347,7 @@ function matLabel(mat) {
 }
 
 function getCraftTime(c) {
-  const equipMult = gameState.newEquipment ? 0.9 : 1;
+  const equipMult = gameState.newEquipment ? BALANCE.crafting.newEquipmentTimeMult : 1;
   const datingMult = getWorkSpeedMultiplier();
   return Math.max(5, Math.floor(c.time * equipMult * datingMult));
 }
@@ -2445,7 +2488,7 @@ function doUpgrade() {
       if (next.level >= 4) gameState.automationLine = true;
       if (next.level >= 5 && !gameState.fullProduction) {
         gameState.fullProduction = true;
-        gameState.wage += 15;
+        gameState.wage += BALANCE.progression.fullProductionWageBonus;
         log(`Full Production! Base wage increased to $${gameState.wage}.`, 'g');
       }
       if (gameState.townLv < gameState.factoryLv) gameState.townLv = Math.min(gameState.factoryLv, 5);
@@ -2531,11 +2574,11 @@ function doShopEquip() {
   const pillarDiscount = gameState.rep >= 4;
   const items = [
     { id: 'uniform',  label: `UNIFORM   $${applyPillarDiscount(20)}  +10% pay`,     cost: applyPillarDiscount(20) },
-    { id: 'bike',     label: `BIKE      $${applyPillarDiscount(35)}  10min travel`,  cost: applyPillarDiscount(35) },
-    { id: 'bus_pass', label: `BUS PASS  $${applyPillarDiscount(15)}  5min, $2/trip`, cost: applyPillarDiscount(15) },
-    { id: 'toolbelt', label: `TOOLBELT  $${applyPillarDiscount(45)}  -20% craft energy`, cost: applyPillarDiscount(45) },
+    { id: 'bike',     label: `BIKE      $${applyPillarDiscount(BALANCE.travel.bikeCost)}  ${BALANCE.travel.bikeTime}min travel`,  cost: applyPillarDiscount(BALANCE.travel.bikeCost) },
+    { id: 'bus_pass', label: `BUS PASS  $${applyPillarDiscount(BALANCE.travel.busPassCost)}  ${BALANCE.travel.busTime}min, $${BALANCE.travel.busTripCost}/trip`, cost: applyPillarDiscount(BALANCE.travel.busPassCost) },
+    { id: 'toolbelt', label: `TOOLBELT  $${applyPillarDiscount(45)}  -18% craft energy`, cost: applyPillarDiscount(45) },
     { id: 'thermos',  label: `THERMOS   $${applyPillarDiscount(25)}  -15% energy drain`, cost: applyPillarDiscount(25) },
-    { id: 'gloves',   label: `WORK GLOVES  $${applyPillarDiscount(18)}  -15% task energy`, cost: applyPillarDiscount(18) },
+    { id: 'gloves',   label: `WORK GLOVES  $${applyPillarDiscount(18)}  -12% task energy`, cost: applyPillarDiscount(18) },
     { id: 'lunchbox', label: `LUNCHBOX     $${applyPillarDiscount(22)}  -20% hunger drain`, cost: applyPillarDiscount(22) },
     { id: 'blueprint', label: `BLUEPRINT    $${applyPillarDiscount(30)}  -$20 next factory upgrade`, cost: applyPillarDiscount(30), qty: true },
   ];
@@ -2676,7 +2719,7 @@ function talkNPC(n) {
     ? (isPerkActive(n) ? `PERK ACTIVE \u2713: ${n.perk.description}` : `PERK (locked): ${n.perk.description}`)
     : '';
   const datingBonusDesc = isDating
-    ? `DATING BONUS ✓: +${DATING_THRESHOLDS.passiveEnergyRegen.toFixed(2)} passive energy regen and 10% faster work/crafting.`
+    ? `DATING BONUS ✓: +${DATING_THRESHOLDS.passiveEnergyRegen.toFixed(2)} passive energy regen and ${Math.round((1 - DATING_THRESHOLDS.workSpeedMult) * 100)}% faster work/crafting.`
     : '';
   const desc = `"${line}"\n\n${hearts}\nRelationship: ${tier.label}\n\n${perkDesc}${datingBonusDesc ? `\n${datingBonusDesc}` : ''}`;
   const opts = ['Say hi'];
@@ -2687,7 +2730,7 @@ function talkNPC(n) {
     const chosen = opts[i];
     if (chosen === 'Befriend (+1 friendship)') {
       applyFriendshipGain(n, 1, 'friendship');
-      gameState.rep = Math.min(5, gameState.rep + 0.2);
+      gameState.rep = Math.min(5, gameState.rep + BALANCE.relationship.befriendRepGain);
       checkQuest('getting_to_know');
       checkQuest('town_friend');
       checkQuest('factory_crew');
@@ -2742,10 +2785,10 @@ function doGiftNPC(n) {
     gameState.giftedToday.push(n.id);
     gameState.totalGiftsGiven = (gameState.totalGiftsGiven || 0) + 1;
     if (gift.id === n.gift) {
-      applyFriendshipGain(n, 2, 'gift');
+      applyFriendshipGain(n, BALANCE.relationship.favoriteGiftFriendship, 'gift');
       log(`${n.name} loved it!`, 'g');
     } else {
-      applyFriendshipGain(n, 1, 'gift');
+      applyFriendshipGain(n, BALANCE.relationship.regularGiftFriendship, 'gift');
       log(`${n.name} appreciated the gift.`, 'g');
     }
     checkQuest('getting_to_know');
@@ -2761,8 +2804,8 @@ function doSleep() {
   const tasksDone = gameState.tasks.filter(t => t).length;
   const hungerAtSleep = Math.round(gameState.hunger);
   const energyAtSleep = Math.round(gameState.energy);
-  const canPayRent = gameState.money >= 10;
-  const netDay = canPayRent ? earned - 10 : earned;
+  const canPayRent = gameState.money >= BALANCE.progression.dailyRent;
+  const netDay = canPayRent ? earned - BALANCE.progression.dailyRent : earned;
 
   let flavor;
   if (tasksDone === 3 && crafted > 0) flavor = 'Productive day! Keep it up.';
@@ -2773,7 +2816,7 @@ function doSleep() {
   const desc = [
     `Money earned today: $${earned}`,
     `Items crafted:      ${crafted}`,
-    `Rent paid: ${canPayRent ? '-$10' : '\u26a0 UNPAID'}`,
+    `Rent paid: ${canPayRent ? `-$${BALANCE.progression.dailyRent}` : '\u26a0 UNPAID'}`,
     `Net for the day:    $${netDay}`,
     `Hunger at sleep:    ${hungerAtSleep}%`,
     `Energy at sleep:    ${energyAtSleep}%`,
@@ -2784,9 +2827,9 @@ function doSleep() {
   const sleepNote = gameState.homeLv >= 3 ? '\nSlept well — full energy restored!' : '';
   modal(`DAY ${gameState.day} SUMMARY`, desc + sleepNote, ['Start New Day'], () => {
     if (canPayRent) {
-      gameState.money -= 10;
+      gameState.money -= BALANCE.progression.dailyRent;
       if (gameState.rentDebt > 0) { gameState.rentDebt = 0; }
-      log('Rent paid: -$10.', 'g');
+      log(`Rent paid: -$${BALANCE.progression.dailyRent}.`, 'g');
     } else {
       gameState.rentDebt = (gameState.rentDebt || 0) + 1;
       log('\u26a0 Couldn\'t pay rent \u2014 debt noted.', 'b');
@@ -2797,7 +2840,7 @@ function doSleep() {
     }
     if (gameState.money > 100) checkQuest('in_the_black');
     gameState.time = 6 * 60;
-    gameState.energy = gameState.homeLv >= 3 ? 100 : Math.min(100, gameState.energy + 65);
+    gameState.energy = gameState.homeLv >= 3 ? 100 : Math.min(100, gameState.energy + BALANCE.progression.partialSleepEnergyRestore);
     gameState.dailyTasks = pickDailyTasks();
     gameState.tasks = [false, false, false];
     gameState.assignedTasks = { 0: null, 1: null, 2: null };
@@ -2822,7 +2865,7 @@ function doSleep() {
     advanceSeasonForNewDay();
     gameState.day++;
     gameState.emit('day_start', { day: gameState.day, time: gameState.time });
-    gameState.hunger = Math.max(gameState.hunger - 10, 20);
+    gameState.hunger = Math.max(gameState.hunger - BALANCE.progression.dailyHungerLossOnWake, BALANCE.passive.lowHungerFloorOnWake);
     checkStoryDayStart();
     checkQuest('first_steps');
     checkQuest('town_rising');
@@ -2837,16 +2880,18 @@ function endShift(complete) {
   if (gameState.shiftDone) return;
   gameState.shiftDone = true;
   const done = gameState.tasks.filter(t => t).length;
-  let p = gameState.wage + (done === 3 ? 10 : 0) + gameState.craftedToday * 3;
+  let p = gameState.wage
+    + (done === 3 ? BALANCE.progression.taskCompletionBonus : 0)
+    + gameState.craftedToday * BALANCE.progression.wagePerCraftedItem;
   if (gameState.inventory.uniform) p = Math.round(p * 1.1);
   const vanceNpc = getNPCById('boss');
   if (isPerkActive(vanceNpc)) {
-    p += 8;
-    log('Vance bonus: +$8', 'g');
+    p += BALANCE.progression.bossWageBonus;
+    log(`Vance bonus: +$${BALANCE.progression.bossWageBonus}`, 'g');
   }
   if (gameState.rep >= 3) {
-    p += 5;
-    log('Respected worker bonus: +$5', 'g');
+    p += BALANCE.progression.respectedWageBonus;
+    log(`Respected worker bonus: +$${BALANCE.progression.respectedWageBonus}`, 'g');
   }
   addMoney(p);
   gameState.weeklyPay += p;
@@ -3136,12 +3181,14 @@ function passive() {
   if (passiveTick < 200) return;
   passiveTick = 0;
   addGameMinutes(1, 'passive_tick');
-  let _hDrain = 0.4;
-  if (inventory.lunchbox) _hDrain *= 0.8;
-  if (gameState.vitaminsToday) _hDrain *= 0.5;
+  let _hDrain = BALANCE.passive.hungerDrainPerMinute;
+  if (inventory.lunchbox) _hDrain *= BALANCE.passive.lunchboxHungerMult;
+  if (gameState.vitaminsToday) _hDrain *= BALANCE.passive.vitaminsHungerMult;
   playerState.hunger = Math.max(0, playerState.hunger - _hDrain);
   const season = getSeason();
-  const baseEnergyDrain = inventory.thermos ? 0.15 * 0.85 : 0.15;
+  const baseEnergyDrain = inventory.thermos
+    ? BALANCE.passive.energyDrainPerMinute * BALANCE.passive.thermosEnergyMult
+    : BALANCE.passive.energyDrainPerMinute;
   const energyDrain = baseEnergyDrain * season.energyDrainMult;
   playerState.energy = Math.max(0, playerState.energy - energyDrain);
   const datingPartner = getDatingPartner();
@@ -3479,7 +3526,7 @@ function applyLoad(raw) {
     newQuests.forEach(nq => { if (!gameState.quests.find(q => q.id === nq.id)) gameState.quests.push(nq); });
     // Update NPC profiles for saves that predate expanded NPC data
     const npcProfiles = {
-      boss: { role: 'Factory Manager', schedule: { morning: 'FACTORY', evening: 'STREET' }, gift: 'coffee_item', perk: { description: '+$8 bonus pay per shift', type: 'wage_bonus', value: 8 }, dialog: ['Get back to work.', "Don't be late again.", "You're pulling your weight.", 'Good worker. Keep it up.', "You're the best on the floor."] },
+      boss: { role: 'Factory Manager', schedule: { morning: 'FACTORY', evening: 'STREET' }, gift: 'coffee_item', perk: { description: '+$6 bonus pay per shift', type: 'wage_bonus', value: BALANCE.progression.bossWageBonus }, dialog: ['Get back to work.', "Don't be late again.", "You're pulling your weight.", 'Good worker. Keep it up.', "You're the best on the floor."] },
       rita: { role: 'Town Resident', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'bread', perk: { description: 'Warn you if hunger < 30 (saves 5 min)', type: 'hunger_warn', value: 5 }, dialog: ['Morning!', "Nice day, isn't it?", "You're always so friendly.", 'I baked you something!', "You're my favorite neighbor."] },
       chef: { role: 'Diner Owner', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'coffee_item', perk: { description: '20% discount at the diner', type: 'diner_discount', value: 0.2 }, dialog: ['Best grub in town!', 'Try the special!', "You're a regular now.", 'On the house today!', 'Anything for my best customer.'] },
       otto: { role: 'Factory Worker', schedule: { morning: 'FACTORY', evening: 'STREET' }, gift: 'scrapMetal', perk: { description: 'Occasionally completes 1 task for you', type: 'task_help', value: 1 }, dialog: ['Pass me that wrench.', 'Nice hustle.', 'We make a good team.', 'I got your back today.', "Best partner I've had."] },
