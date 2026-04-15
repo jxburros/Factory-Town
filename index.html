@@ -875,6 +875,19 @@ const REPUTATION_TIERS = [
   { min: 5, max: 5, title: 'Town Legend', effect: 'All perks active regardless of friendship level' },
 ];
 
+const RELATIONSHIP_TIERS = [
+  { id: 'stranger', label: 'Stranger', min: 0, max: 0 },
+  { id: 'friend', label: 'Friend', min: 1, max: 2 },
+  { id: 'close_friend', label: 'Close Friend', min: 3, max: 5 },
+  { id: 'dating', label: 'Dating', min: 0, max: 5 },
+];
+const DATING_THRESHOLDS = {
+  startDatingFriendship: 4,
+  startDatingRep: 3,
+  passiveEnergyRegen: 0.08,
+  workSpeedMult: 0.9,
+};
+
 
 const CONTRACT_TEMPLATES = [
   { title: 'Bolt Bulk Order', item: 'bolt', qty: 8, reward: 65, days: 4, minFactoryLv: 1 },
@@ -951,6 +964,8 @@ const gameState = {
   totalEarned: 0,
   rentDebt: 0,
   moneyEarnedToday: 0,
+  datingPartnerId: null,
+  datingDialogueUsedToday: false,
   materialsBought: 0,
   factoryXP: 0,
   townXP: 0,
@@ -1363,7 +1378,7 @@ function setupSharedState(state) {
 
   ['time', 'day', 'seasonIndex', 'seasonDay', 'arrivedToday', 'dayOver', 'shiftDone'].forEach(k => mapSystemField(systems.time, state, k));
   ['money', 'hunger', 'energy', 'clothed', 'rep', 'disciplines', 'weeklyPay', 'travelMethod'].forEach(k => mapSystemField(systems.player, state, k));
-  ['npcs', 'giftedToday', 'totalGiftsGiven', 'ritaWarnedToday', 'freeCoffeeUsed'].forEach(k => mapSystemField(systems.relationships, state, k));
+  ['npcs', 'giftedToday', 'totalGiftsGiven', 'ritaWarnedToday', 'freeCoffeeUsed', 'datingPartnerId', 'datingDialogueUsedToday'].forEach(k => mapSystemField(systems.relationships, state, k));
   ['scene', 'factoryLv', 'townLv', 'wage', 'factoryXP', 'townXP', 'storyChapter', 'storyFlags'].forEach(k => mapSystemField(systems.town, state, k));
   ['contracts', 'availableContracts', 'contractRefreshDay', 'contractsCompleted', 'contractStreak', 'clutchContract'].forEach(k => mapSystemField(systems.contracts, state, k));
   ['tasks', 'dailyTasks', 'taskNames', 'assignedTasks', 'ottoWorkTimer', 'ottoTasksCompleted', 'diversifiedToday'].forEach(k => mapSystemField(systems.tasks, state, k));
@@ -1516,11 +1531,13 @@ function completeTaskByIndex(idx, source = 'player') {
   if (gameState.tasks[idx]) return false;
   const task = getDailyTaskByIndex(idx);
   let energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+  const taskTime = Math.max(1, Math.round(task.time * getWorkSpeedMultiplier()));
   if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * 0.85));
   if (source === 'player') {
     if (gameState.energy < energyCost) { log('Too tired to do that task right now.', 'w'); return false; }
-    addGameMinutes(task.time, 'task_work');
+    addGameMinutes(taskTime, 'task_work');
     gameState.energy = Math.max(0, gameState.energy - energyCost);
+    if (taskTime < task.time) log('Dating bonus: you worked a little faster.', 'g');
   }
   gameState.tasks[idx] = true;
   gameState.factoryXP += task.xp;
@@ -2206,8 +2223,9 @@ function matLabel(mat) {
 }
 
 function getCraftTime(c) {
-  if (!gameState.newEquipment) return c.time;
-  return Math.max(5, Math.floor(c.time * 0.9));
+  const equipMult = gameState.newEquipment ? 0.9 : 1;
+  const datingMult = getWorkSpeedMultiplier();
+  return Math.max(5, Math.floor(c.time * equipMult * datingMult));
 }
 
 function getCraftPay(c) {
@@ -2553,22 +2571,36 @@ function doMarket() {
 function talkNPC(n) {
   const storyLine = getStoryDialogue(n);
   const f = n.friendship || 0;
+  const isDating = gameState.datingPartnerId === n.id;
   const baseLine = n.dialog ? n.dialog[Math.min(f, n.dialog.length - 1)] : '...';
+  const datingLinePool = n.datingDialog || [
+    "Seeing you always makes my day better.",
+    "Let's keep building this town together.",
+    "Don't overwork yourself, okay?",
+  ];
+  const datingLine = isDating && Math.random() < 0.35
+    ? datingLinePool[Math.floor(Math.random() * datingLinePool.length)]
+    : '';
   const seasonFlavor = {
     Spring: 'Spring has everyone in a better mood.',
     Summer: "Summer heat's no joke. Stay hydrated.",
     Fall: 'Fall air makes the town feel busy.',
     Winter: "Winter roads are rough, so plan ahead."
   };
-  const line = storyLine || `${baseLine} ${seasonFlavor[getSeasonName()] || ''}`.trim();
+  const line = storyLine || datingLine || `${baseLine} ${seasonFlavor[getSeasonName()] || ''}`.trim();
   const hearts = '♥'.repeat(f) + '♡'.repeat(5 - f);
+  const tier = getRelationshipTier(n);
   const role = n.role || '';
   const perkDesc = n.perk
     ? (isPerkActive(n) ? `PERK ACTIVE \u2713: ${n.perk.description}` : `PERK (locked): ${n.perk.description}`)
     : '';
-  const desc = `"${line}"\n\n${hearts}\n\n${perkDesc}`;
+  const datingBonusDesc = isDating
+    ? `DATING BONUS ✓: +${DATING_THRESHOLDS.passiveEnergyRegen.toFixed(2)} passive energy regen and 10% faster work/crafting.`
+    : '';
+  const desc = `"${line}"\n\n${hearts}\nRelationship: ${tier.label}\n\n${perkDesc}${datingBonusDesc ? `\n${datingBonusDesc}` : ''}`;
   const opts = ['Say hi'];
   if (f < 5) opts.push('Befriend (+1 friendship)');
+  if (canStartDating(n)) opts.push('Ask to start dating');
   opts.push('Give a gift', 'Ask about the town', 'Goodbye');
   modal(`TALKING TO: ${n.name}  (${role})`, desc, opts, i => {
     const chosen = opts[i];
@@ -2578,6 +2610,11 @@ function talkNPC(n) {
       checkQuest('getting_to_know');
       checkQuest('town_friend');
       checkQuest('factory_crew');
+    } else if (chosen === 'Ask to start dating') {
+      gameState.datingPartnerId = n.id;
+      gameState.datingDialogueUsedToday = false;
+      n.friendship = Math.max(n.friendship || 0, 5);
+      log(`${n.name} is now your dating partner.`, 'g');
     } else if (chosen === 'Give a gift') {
       doGiftNPC(n);
     } else if (chosen === 'Ask about the town') {
@@ -2695,6 +2732,7 @@ function doSleep() {
     gameState.giftedToday = [];
     gameState.ritaWarnedToday = false;
     gameState.freeCoffeeUsed = false;
+    gameState.datingDialogueUsedToday = false;
     gameState.vitaminsToday = false;
     gameState.attendedEventToday = false;
     gameState.morningActions = [];
@@ -2762,6 +2800,24 @@ function getRepTitle(r = gameState.rep) { return getRepTier(r).title; }
 function getNPCById(id) { return gameState.npcs.find(n => n.id === id); }
 function isNPCUnlocked(n) { return !n.minTownLv || gameState.townLv >= n.minTownLv; }
 function isPerkActive(npc) { return !!npc && (((npc.friendship || 0) >= 3) || gameState.rep >= 5); }
+function getRelationshipTier(npc) {
+  if (!npc) return RELATIONSHIP_TIERS[0];
+  if (gameState.datingPartnerId && npc.id === gameState.datingPartnerId) return RELATIONSHIP_TIERS.find(t => t.id === 'dating');
+  const f = npc.friendship || 0;
+  return RELATIONSHIP_TIERS.find(t => t.id !== 'dating' && f >= t.min && f <= t.max) || RELATIONSHIP_TIERS[0];
+}
+function canStartDating(npc) {
+  if (!npc) return false;
+  if (gameState.datingPartnerId) return false;
+  return (npc.friendship || 0) >= DATING_THRESHOLDS.startDatingFriendship && gameState.rep >= DATING_THRESHOLDS.startDatingRep;
+}
+function getDatingPartner() {
+  if (!gameState.datingPartnerId) return null;
+  return getNPCById(gameState.datingPartnerId);
+}
+function getWorkSpeedMultiplier() {
+  return getDatingPartner() ? DATING_THRESHOLDS.workSpeedMult : 1;
+}
 function applyPillarDiscount(price) {
   if (gameState.rep < 4) return price;
   return Math.max(1, Math.floor(price * 0.9));
@@ -2769,11 +2825,17 @@ function applyPillarDiscount(price) {
 function applyFriendshipGain(npc, amount, reason = 'friendship') {
   if (!npc || amount <= 0) return;
   const before = npc.friendship || 0;
+  const beforeTier = getRelationshipTier(npc).id;
   npc.friendship = Math.min(5, before + amount);
   const gained = (npc.friendship || 0) - before;
   if (gained <= 0) return;
   gameState.emit('relationship_change', { npcId: npc.id, delta: gained, reason, value: npc.friendship || 0 });
   log(`+${gained} friendship with ${npc.name}.`, 'g');
+  const afterTier = getRelationshipTier(npc).id;
+  if (afterTier !== beforeTier) {
+    const tierLabel = getRelationshipTier(npc).label;
+    log(`${npc.name} relationship tier reached: ${tierLabel}.`, 'g');
+  }
   const spill = NPC_SPILLOVER[npc.id] || {};
   Object.entries(spill).forEach(([targetId, spillAmt]) => {
     const target = getNPCById(targetId);
@@ -2978,6 +3040,14 @@ function passive() {
   const baseEnergyDrain = inventory.thermos ? 0.15 * 0.85 : 0.15;
   const energyDrain = baseEnergyDrain * season.energyDrainMult;
   playerState.energy = Math.max(0, playerState.energy - energyDrain);
+  const datingPartner = getDatingPartner();
+  if (datingPartner) {
+    playerState.energy = cap(playerState.energy + DATING_THRESHOLDS.passiveEnergyRegen);
+    if (!gameState.datingDialogueUsedToday && Math.random() < 0.05) {
+      gameState.datingDialogueUsedToday = true;
+      log(`${datingPartner.name}: "You've got this. I'm cheering for you."`, 'g');
+    }
+  }
   if (gameState.ottoWorkTimer > 0) {
     gameState.ottoWorkTimer = Math.max(0, gameState.ottoWorkTimer - 1);
     if (gameState.ottoWorkTimer === 0) {
@@ -3236,6 +3306,8 @@ function applyLoad(raw) {
     if (gameState.totalGiftsGiven === undefined) gameState.totalGiftsGiven = 0;
     if (gameState.ritaWarnedToday === undefined) gameState.ritaWarnedToday = false;
     if (gameState.freeCoffeeUsed === undefined) gameState.freeCoffeeUsed = false;
+    if (gameState.datingPartnerId === undefined) gameState.datingPartnerId = null;
+    if (gameState.datingDialogueUsedToday === undefined) gameState.datingDialogueUsedToday = false;
     if (gameState.vitaminsToday === undefined) gameState.vitaminsToday = false;
     if (gameState.attendedEventToday === undefined) gameState.attendedEventToday = false;
     if (gameState.storyChapter === undefined) gameState.storyChapter = 0;
@@ -3307,6 +3379,7 @@ function applyLoad(raw) {
       if (!n.dialog || n.dialog.length < 5) n.dialog = prof.dialog;
       if (n.minTownLv === undefined && prof.minTownLv !== undefined) n.minTownLv = prof.minTownLv;
     });
+    if (gameState.datingPartnerId && !gameState.npcs.find(n => n.id === gameState.datingPartnerId)) gameState.datingPartnerId = null;
     const missingNpcs = [
       { id: 'maya', name: 'MAYA', x: 108, y: 168, scene: 'STREET', spr: 'npc_maya', friendship: 0 },
       { id: 'doc', name: 'DOC CHEN', x: 176, y: 168, scene: 'STREET', spr: 'npc_doc', friendship: 0 },
