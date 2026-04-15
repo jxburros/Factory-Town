@@ -1643,16 +1643,20 @@ const TILE_MAPS = {
   FACTORY: mkMap((r, c) => r === 0 || r === 14 || c === 0 || c === 19 ? 'factory_wall' : 'factory_floor')
 };
 
+function getHomeSplitX() {
+  return Math.floor(CANVAS_W / 2);
+}
+
 const SCENE_OBJECTS = {
   HOME: [
-    { x: 2, y: 16, w: 32, h: 16, lbl: 'BED', act: 'bed', spr: 'bed' },
-    { x: 56, y: 16, w: 24, h: 32, lbl: 'WARDROBE', act: 'wardrobe', spr: 'wardrobe' },
-    { x: 176, y: 16, w: 16, h: 24, lbl: 'FRIDGE', act: 'fridge', spr: 'fridge' },
-    { x: 208, y: 16, w: 16, h: 16, lbl: 'STOVE', act: 'stove', spr: 'stove' },
-    { x: 240, y: 16, w: 24, h: 20, lbl: 'CHEST', act: 'chest', col: '#4a3a1a' },
-    { x: 112, y: 16, w: 32, h: 16, lbl: 'TABLE', act: 'table', col: '#b06820' },
-    { x: 176, y: 80, w: 32, h: 32, lbl: 'UPGRADE\nHOME', act: 'upgrade_home', col: '#2a1a4a' },
-    { x: 112, y: 192, w: 64, h: 32, lbl: 'DOOR OUT', act: 'exit_home', portal: true, col: '#664422' },
+    { x: 12, y: 18, w: 32, h: 16, lbl: 'BED', act: 'bed', spr: 'bed' },
+    { x: 58, y: 16, w: 24, h: 32, lbl: 'WARDROBE', act: 'wardrobe', spr: 'wardrobe' },
+    { x: 126, y: 16, w: 16, h: 24, lbl: 'FRIDGE', act: 'fridge', spr: 'fridge' },
+    { x: 126, y: 42, w: 16, h: 16, lbl: 'STOVE', act: 'stove', spr: 'stove' },
+    { x: 24, y: 58, w: 24, h: 20, lbl: 'CHEST', act: 'chest', col: '#4a3a1a' },
+    { x: 92, y: 42, w: 32, h: 16, lbl: 'TABLE', act: 'table', col: '#b06820' },
+    { x: 112, y: 88, w: 32, h: 32, lbl: 'UPGRADE\nHOME', act: 'upgrade_home', col: '#2a1a4a' },
+    { x: 92, y: 192, w: 56, h: 32, lbl: 'DOOR OUT', act: 'exit_home', portal: true, col: '#664422' },
   ],
   STREET: [
     { x: 4, y: 4, w: 48, h: 48, lbl: 'DINER', act: 'diner', spr: 'diner' },
@@ -1748,6 +1752,7 @@ function getTile(id) {
     if (id === 'wall') { drawBrick(ox, '#222244', '#1a1a38', '#2a2a4a'); }
     else if (id === 'floor_wood') drawWoodFloor(ox, PALETTE.floorWood, PALETTE.floorWood2);
     else if (id === 'floor_wood2') drawWoodFloor(ox, '#a07828', '#886020');
+    else if (id === 'floor_unfinished') drawWoodFloor(ox, '#3f3a36', '#322e2a');
     else if (id === 'grass') drawGrass(ox);
     else if (id === 'sidewalk') drawSidewalk(ox);
     else if (id === 'street') drawStreet(ox);
@@ -1819,6 +1824,23 @@ function draw() {
 }
 
 function drawTiles() {
+  if (gameState.scene === 'HOME') {
+    const splitX = getHomeSplitX();
+    for (let y = 0; y < CANVAS_H; y += TILE_SIZE) {
+      const r = Math.floor(y / TILE_SIZE);
+      for (let x = 0; x < CANVAS_W; x += TILE_SIZE) {
+        const c = Math.floor(x / TILE_SIZE);
+        const inLeft = x < splitX;
+        let tileId = 'floor_unfinished';
+        if (inLeft) {
+          if (r === 0 || r === 14 || c === 0 || x + TILE_SIZE >= splitX) tileId = 'wall';
+          else tileId = r < 8 ? 'floor_wood' : 'floor_wood2';
+        }
+        ctx.drawImage(getTile(tileId), x, y);
+      }
+    }
+    return;
+  }
   const map = TILE_MAPS[gameState.scene];
   const mapRows = map.length;
   const mapCols = map[0].length;
@@ -1840,37 +1862,62 @@ function drawSceneDecor() {
     });
   }
   if (gameState.scene === 'HOME') {
+    const splitX = getHomeSplitX();
     ctx.fillStyle = 'rgba(100,100,180,0.06)';
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 20; c++) if ((r + c) % 3 === 0) ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, 4, 4);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < Math.floor(splitX / TILE_SIZE); c++) if ((r + c) % 3 === 0) ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, 4, 4);
     ctx.fillStyle = '#3a2060';
-    ctx.fillRect(64, 96, 128, 64);
+    ctx.fillRect(52, 88, 86, 70);
     ctx.fillStyle = '#4a3070';
-    ctx.fillRect(68, 100, 120, 56);
+    ctx.fillRect(56, 92, 78, 62);
     ctx.strokeStyle = '#5a4080';
     ctx.lineWidth = 1;
-    ctx.strokeRect(68, 100, 120, 56);
+    ctx.strokeRect(56, 92, 78, 62);
+
+    // starter-home accents (rug + kitchenette backsplash + bed nook divider)
+    ctx.fillStyle = '#684b7f';
+    ctx.fillRect(68, 116, 52, 28);
+    ctx.strokeStyle = '#8f72aa';
+    ctx.strokeRect(68, 116, 52, 28);
+    ctx.fillStyle = '#5f5a66';
+    ctx.fillRect(120, 14, 26, 48);
+    ctx.fillStyle = '#22222f';
+    ctx.fillRect(90, 10, 2, 56);
+
+    // right half: future expansion zone (blocked construction area)
+    ctx.fillStyle = 'rgba(8, 8, 14, 0.72)';
+    ctx.fillRect(splitX, 0, CANVAS_W - splitX, CANVAS_H);
+    ctx.strokeStyle = '#5a4d38';
+    ctx.strokeRect(splitX + 0.5, 8.5, CANVAS_W - splitX - 9, CANVAS_H - 17);
+    ctx.strokeStyle = '#7b6747';
+    for (let y = 16; y < CANVAS_H - 10; y += 32) ctx.strokeRect(splitX + 10.5, y + 0.5, CANVAS_W - splitX - 21, 22);
+    for (let y = 0; y < CANVAS_H; y += 20) {
+      const stripeW = Math.min(18, CANVAS_W - splitX - 2);
+      ctx.fillStyle = y % 40 === 0 ? '#d0a22f' : '#1f1f1f';
+      ctx.fillRect(splitX + 1, y, stripeW, 8);
+    }
+    drawLabel('EXPANSION WING\nLOCKED', splitX + 24, 34, { size: 6, color: '#f2d38a', bg: 'rgba(0,0,0,0.75)', border: 'rgba(210,162,47,0.55)' });
 
     if (gameState.homeLv >= 2) {
       ctx.fillStyle = '#6a4426';
-      ctx.fillRect(200, 90, 10, 7);
+      ctx.fillRect(132, 126, 10, 7);
       ctx.fillStyle = '#2f8a3b';
-      [[203, 88], [206, 86], [209, 88], [205, 84], [208, 84]].forEach(([x, y]) => ctx.fillRect(x, y, 2, 2));
+      [[135, 124], [138, 122], [141, 124], [137, 120], [140, 120]].forEach(([x, y]) => ctx.fillRect(x, y, 2, 2));
     }
     if (gameState.homeLv >= 3) {
       ctx.fillStyle = 'rgba(170, 100, 70, 0.45)';
-      ctx.fillRect(80, 100, 80, 40);
+      ctx.fillRect(62, 96, 66, 40);
       ctx.strokeStyle = 'rgba(255, 210, 160, 0.55)';
-      ctx.strokeRect(80, 100, 80, 40);
+      ctx.strokeRect(62, 96, 66, 40);
       ctx.fillStyle = 'rgba(255, 210, 160, 0.3)';
-      for (let x = 88; x < 152; x += 16) ctx.fillRect(x, 108, 8, 2);
-      for (let y = 112; y < 136; y += 12) ctx.fillRect(88, y, 64, 2);
+      for (let x = 70; x < 120; x += 16) ctx.fillRect(x, 104, 8, 2);
+      for (let y = 108; y < 132; y += 12) ctx.fillRect(70, y, 48, 2);
     }
     if (gameState.homeLv >= 4) {
       ctx.fillStyle = '#884422';
       ctx.fillRect(0, 20, 8, 40);
-      ctx.fillRect(304, 20, 8, 40);
+      ctx.fillRect(splitX - 8, 20, 8, 40);
       ctx.fillStyle = 'rgba(255, 200, 100, 0.04)';
-      ctx.fillRect(0, 120, CANVAS_W, 120);
+      ctx.fillRect(0, 120, splitX, 120);
     }
   }
   if (gameState.scene === 'FACTORY') {
@@ -3389,7 +3436,9 @@ function moveP() {
   player.moving = !!(dx || dy);
   if (player.moving) { player.ft++; if (player.ft > 3) { player.frame = (player.frame + 1) % 8; player.ft = 0; } }
   else player.frame = 0;
-  const nx = Math.max(4, Math.min(CANVAS_W - 10, player.x + dx));
+  const homeMaxX = getHomeSplitX() - 10;
+  const maxX = gameState.scene === 'HOME' ? homeMaxX : CANVAS_W - 10;
+  const nx = Math.max(4, Math.min(maxX, player.x + dx));
   const ny = Math.max(4, Math.min(CANVAS_H - 24, player.y + dy));
   let blocked = false;
   for (const o of SCENE_OBJECTS[gameState.scene]) {
