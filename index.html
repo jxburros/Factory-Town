@@ -1640,6 +1640,8 @@ function mkMap(fn) {
 const TILE_MAPS = {
   HOME: mkMap((r, c) => r === 0 || r === 14 || c === 0 || c === 19 ? 'wall' : (r < 8 ? 'floor_wood' : 'floor_wood2')),
   STREET: mkMap((r, c) => r <= 4 || r >= 10 ? 'grass' : (r === 5 || r === 9 ? 'sidewalk' : 'street')),
+  STREET_LEFT: mkMap((r, c) => r <= 4 || r >= 10 ? 'grass' : (r === 5 || r === 9 ? 'sidewalk' : 'street')),
+  STREET_RIGHT: mkMap((r, c) => r <= 4 || r >= 10 ? 'grass' : (r === 5 || r === 9 ? 'sidewalk' : 'street')),
   FACTORY: mkMap((r, c) => r === 0 || r === 14 || c === 0 || c === 19 ? 'factory_wall' : 'factory_floor')
 };
 
@@ -1666,6 +1668,8 @@ const SCENE_OBJECTS = {
     { x: 264, y: 128, w: 48, h: 48, lbl: 'HOME', act: 'enter_home', spr: 'house', portal: true },
     { x: 4, y: 148, w: 72, h: 72, lbl: 'PARK', act: 'park', col: '#1a5c1a' },
   ],
+  STREET_LEFT: [],
+  STREET_RIGHT: [],
   FACTORY: [
     { x: 16, y: 16, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
     { x: 112, y: 16, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
@@ -1854,10 +1858,13 @@ function drawTiles() {
 }
 
 function drawSceneDecor() {
-  if (gameState.scene === 'STREET') {
+  if (gameState.scene === 'STREET' || gameState.scene === 'STREET_LEFT' || gameState.scene === 'STREET_RIGHT') {
     ctx.fillStyle = PALETTE.streetLine;
     for (let c = 0; c < CANVAS_W; c += 24) ctx.fillRect(c, CANVAS_H / 2 - 1, 12, 2);
-    [[8, 148], [8, 180], [40, 164], [56, 148], [56, 180]].forEach(([x, y]) => {
+    const sideFillers = gameState.scene === 'STREET'
+      ? [[8, 148], [8, 180], [40, 164], [56, 148], [56, 180]]
+      : [[18, 24], [66, 40], [114, 20], [258, 28], [274, 164], [236, 184], [188, 170], [30, 172], [82, 188], [140, 180]];
+    sideFillers.forEach(([x, y]) => {
       if (spriteCache['tree']) ctx.drawImage(spriteCache['tree'], x, y - 20);
     });
   }
@@ -3426,6 +3433,35 @@ function passive() {
 
 // ── MOVEMENT ────────────────────────────────────────────────────────────
 const SPEED = 1.5;
+const STREET_SIDE_SCENES = ['STREET_LEFT', 'STREET', 'STREET_RIGHT'];
+function handleStreetSideTransition(dx) {
+  if (!dx || !STREET_SIDE_SCENES.includes(gameState.scene)) return false;
+  const y = Math.max(4, Math.min(CANVAS_H - 24, player.y));
+
+  if (dx < 0 && player.x <= 4) {
+    if (gameState.scene === 'STREET') {
+      changeScene('STREET_LEFT', CANVAS_W - 12, y);
+      return true;
+    }
+    if (gameState.scene === 'STREET_RIGHT') {
+      changeScene('STREET', CANVAS_W - 12, y);
+      return true;
+    }
+  }
+
+  if (dx > 0 && player.x >= CANVAS_W - 10) {
+    if (gameState.scene === 'STREET') {
+      changeScene('STREET_RIGHT', 6, y);
+      return true;
+    }
+    if (gameState.scene === 'STREET_LEFT') {
+      changeScene('STREET', 6, y);
+      return true;
+    }
+  }
+
+  return false;
+}
 function moveP() {
   if (gameState.paused) return;
   let dx = 0, dy = 0;
@@ -3436,6 +3472,7 @@ function moveP() {
   player.moving = !!(dx || dy);
   if (player.moving) { player.ft++; if (player.ft > 3) { player.frame = (player.frame + 1) % 8; player.ft = 0; } }
   else player.frame = 0;
+  if (handleStreetSideTransition(dx)) { passive(); return; }
   const homeMaxX = getHomeSplitX() - 10;
   const maxX = gameState.scene === 'HOME' ? homeMaxX : CANVAS_W - 10;
   const nx = Math.max(4, Math.min(maxX, player.x + dx));
