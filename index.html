@@ -1112,7 +1112,7 @@ const gameState = {
       friendship: 0,
     },
     {
-      id: 'otto', name: 'OTTO', x: 126, y: 138, scene: 'FACTORY', spr: 'npc_otto',
+      id: 'otto', name: 'OTTO', x: 118, y: 104, scene: 'FACTORY', spr: 'npc_otto',
       role: 'Factory Worker',
       schedule: { morning: 'FACTORY', evening: 'STREET' },
       gift: 'scrapMetal',
@@ -1676,14 +1676,14 @@ const SCENE_OBJECTS = {
     { x: 236, y: 24, w: 48, h: 48, lbl: 'HOME', act: 'enter_home', spr: 'house', portal: true },
   ],
   FACTORY: [
-    { x: 14, y: 20, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
-    { x: 74, y: 20, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
-    { x: 104, y: 64, w: 48, h: 32, lbl: 'LOG PARTS', act: 'task2', taskIdx: 2, col: '#223344' },
-    { x: 14, y: 112, w: 48, h: 32, lbl: 'ASSIGN\nTASKS', act: 'assign_tasks', col: '#1a3a2a' },
-    { x: 72, y: 112, w: 48, h: 48, lbl: 'CRAFT', act: 'craft', spr: 'craftstation' },
-    { x: 14, y: 164, w: 52, h: 36, lbl: 'UPGRADE', act: 'upgrade', col: '#443322' },
-    { x: 96, y: 156, w: 56, h: 44, lbl: 'STORAGE', act: 'storage', col: '#333355' },
-    { x: 46, y: 204, w: 64, h: 28, lbl: 'EXIT', act: 'exit_factory', portal: true, col: '#664422' },
+    { x: 12, y: 18, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
+    { x: 88, y: 18, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
+    { x: 12, y: 70, w: 48, h: 32, lbl: 'LOG PARTS', act: 'task2', taskIdx: 2, col: '#223344' },
+    { x: 88, y: 70, w: 48, h: 32, lbl: 'ASSIGN\nTASKS', act: 'assign_tasks', col: '#1a3a2a' },
+    { x: 18, y: 122, w: 48, h: 48, lbl: 'CRAFT', act: 'craft', spr: 'craftstation' },
+    { x: 88, y: 122, w: 52, h: 36, lbl: 'UPGRADE', act: 'upgrade', col: '#443322' },
+    { x: 100, y: 166, w: 52, h: 34, lbl: 'STORAGE', act: 'storage', col: '#333355' },
+    { x: 36, y: 204, w: 64, h: 28, lbl: 'EXIT', act: 'exit_factory', portal: true, col: '#664422' },
   ]
 };
 
@@ -2319,20 +2319,20 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
       log('Morning routine complete! +10 energy, +5 hunger', 'g');
       checkQuest('well_prepared');
     }
-    changeScene('STREET', 108, 96);
+    changeScene('STREET_RIGHT', 224, 82);
   } else if (a === 'enter_home') {
     changeScene('HOME', 96, 120);
   } else if (a === 'enter_factory') {
     if (!gameState.clothed) { log('You cannot enter without clothing.', 'b'); return; }
-    const opts = getTravelOpts();
-    modal('GO TO FACTORY', 'Choose your travel method:', opts.map(o => o.label), i => doTravel(opts[i], 'FACTORY', 78, 186));
+    changeScene('FACTORY', 78, 186);
+    processFactoryArrival();
   } else if (a === 'exit_factory') {
     const undone = gameState.tasks.filter(t => !t).length;
     if (undone > 0 && !gameState.shiftDone) {
       modal('LEAVE EARLY?', `${undone} task(s) still unfinished.\nYou will be docked $${undone * 12}.`, ['Leave anyway  (-$' + undone * 12 + ')', 'Stay and finish tasks'], i => {
-        if (i === 0) { gameState.money = Math.max(0, gameState.money - undone * 12); log(`Left early. Docked $${undone * 12}.`, 'b'); endShift(false); changeScene('STREET', 108, 96); }
+        if (i === 0) { gameState.money = Math.max(0, gameState.money - undone * 12); log(`Left early. Docked $${undone * 12}.`, 'b'); endShift(false); changeScene('STREET_LEFT', 68, 152); }
       });
-    } else { endShift(true); changeScene('STREET', 108, 96); }
+    } else { endShift(true); changeScene('STREET_LEFT', 68, 152); }
   } else if (a === 'diner') {
     const chefNpc = getNPCById('chef');
     const hasDiscount = isPerkActive(chefNpc);
@@ -2466,6 +2466,21 @@ function getTravelOpts() {
   return out.length ? out : [gameState.travelOptions[0]];
 }
 
+function processFactoryArrival() {
+  if (gameState.arrivedToday) return;
+  gameState.arrivedToday = true;
+  if (gameState.time > 9 * 60) {
+    const late = gameState.time - 9 * 60;
+    const pen = 10 + Math.floor(late / 10) * 5;
+    gameState.money = Math.max(0, gameState.money - pen);
+    gameState.disciplines++;
+    if (gameState.rep > 1) gameState.rep--;
+    log(`LATE by ${late} min!  Disciplined.  -$${pen}  (Total: ${gameState.disciplines})`, 'b');
+  } else {
+    log('Arrived on time! Complete the 3 morning tasks first.', 'g');
+  }
+}
+
 function doTravel(opt, scene, px, py) {
   if (!opt) return;
   if (opt.cost > 0 && !pay(opt.cost)) { log('Not enough money for this travel option.', 'b'); return; }
@@ -2473,17 +2488,7 @@ function doTravel(opt, scene, px, py) {
   const travelTime = Math.max(1, Math.round(opt.time * season.travelTimeMult));
   addGameMinutes(travelTime, 'travel');
   changeScene(scene, px, py);
-  if (scene === 'FACTORY' && !gameState.arrivedToday) {
-    gameState.arrivedToday = true;
-    if (gameState.time > 9 * 60) {
-      const late = gameState.time - 9 * 60;
-      const pen = 10 + Math.floor(late / 10) * 5;
-      gameState.money = Math.max(0, gameState.money - pen);
-      gameState.disciplines++;
-      if (gameState.rep > 1) gameState.rep--;
-      log(`LATE by ${late} min!  Disciplined.  -$${pen}  (Total: ${gameState.disciplines})`, 'b');
-    } else log('Arrived on time! Complete the 3 morning tasks first.', 'g');
-  }
+  if (scene === 'FACTORY') processFactoryArrival();
   if (travelTime !== opt.time) log(`${season.name} travel effect: ${opt.time} min → ${travelTime} min.`, '');
 }
 
