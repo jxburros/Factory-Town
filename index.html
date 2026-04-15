@@ -1302,6 +1302,75 @@ const gameState = {
   ],
 };
 Object.defineProperty(gameState, 'carryUsed', { get: () => getCarryUsed() });
+function createEventBus() {
+  const listeners = {};
+  return {
+    on(eventName, handler) {
+      if (!listeners[eventName]) listeners[eventName] = new Set();
+      listeners[eventName].add(handler);
+      return () => listeners[eventName].delete(handler);
+    },
+    off(eventName, handler) {
+      if (!listeners[eventName]) return;
+      listeners[eventName].delete(handler);
+    },
+    emit(eventName, payload) {
+      if (!listeners[eventName]) return;
+      listeners[eventName].forEach(fn => fn(payload));
+    },
+  };
+}
+
+function mapSystemField(target, state, key) {
+  Object.defineProperty(target, key, {
+    enumerable: true,
+    configurable: true,
+    get: () => state[key],
+    set: v => { state[key] = v; },
+  });
+}
+
+function setupSharedState(state) {
+  const systems = {
+    time: {},
+    player: {},
+    inventory: state.inventory,
+    relationships: {},
+    town: {},
+    contracts: {},
+    tasks: {},
+  };
+
+  ['time', 'day', 'arrivedToday', 'dayOver', 'shiftDone'].forEach(k => mapSystemField(systems.time, state, k));
+  ['money', 'hunger', 'energy', 'clothed', 'rep', 'disciplines', 'weeklyPay', 'travelMethod'].forEach(k => mapSystemField(systems.player, state, k));
+  ['npcs', 'giftedToday', 'totalGiftsGiven', 'ritaWarnedToday', 'freeCoffeeUsed'].forEach(k => mapSystemField(systems.relationships, state, k));
+  ['scene', 'factoryLv', 'townLv', 'wage', 'factoryXP', 'townXP', 'storyChapter', 'storyFlags'].forEach(k => mapSystemField(systems.town, state, k));
+  ['contracts', 'availableContracts', 'contractRefreshDay', 'contractsCompleted', 'contractStreak', 'clutchContract'].forEach(k => mapSystemField(systems.contracts, state, k));
+  ['tasks', 'dailyTasks', 'taskNames', 'assignedTasks', 'ottoWorkTimer', 'ottoTasksCompleted', 'diversifiedToday'].forEach(k => mapSystemField(systems.tasks, state, k));
+
+  const bus = createEventBus();
+  Object.defineProperty(state, '_eventBus', { value: bus, enumerable: false, configurable: true });
+  Object.defineProperty(state, 'systems', { value: systems, enumerable: false, configurable: true });
+  Object.defineProperty(state, 'on', { value: bus.on.bind(bus), enumerable: false, configurable: true });
+  Object.defineProperty(state, 'off', { value: bus.off.bind(bus), enumerable: false, configurable: true });
+  Object.defineProperty(state, 'emit', { value: bus.emit.bind(bus), enumerable: false, configurable: true });
+}
+
+function addGameMinutes(minutes, reason = 'time_pass') {
+  if (!minutes) return;
+  const before = gameState.time;
+  gameState.time += minutes;
+  const startHour = Math.floor(before / 60);
+  const endHour = Math.floor(gameState.time / 60);
+  if (endHour > startHour) {
+    for (let h = startHour + 1; h <= endHour; h++) {
+      gameState.emit('hour_change', { previousHour: h - 1, hour: h % 24, time: gameState.time, reason });
+    }
+  }
+}
+
+setupSharedState(gameState);
+gameState.on('day_start', ({ day }) => log(`Day ${day} systems reset.`, ''));
 
 const player = { x: 96, y: 130, facing: 2, frame: 0, ft: 0, moving: false };
 const keys = {};
@@ -1402,12 +1471,13 @@ function completeTaskByIndex(idx, source = 'player') {
   if (gameState.inventory.gloves) energyCost = Math.max(1, Math.floor(energyCost * 0.85));
   if (source === 'player') {
     if (gameState.energy < energyCost) { log('Too tired to do that task right now.', 'w'); return false; }
-    gameState.time += task.time;
+    addGameMinutes(task.time, 'task_work');
     gameState.energy = Math.max(0, gameState.energy - energyCost);
   }
   gameState.tasks[idx] = true;
   gameState.factoryXP += task.xp;
   log('Task complete: ' + task.label + ' ✓', 'g');
+  gameState.emit('task_completion', { taskIndex: idx, taskId: task.id, source });
   checkFactoryLv();
   return true;
 }
@@ -1834,8 +1904,8 @@ function interact() {
   } else if (a === 'stove') {
     const hungerGain = gameState.homeLv >= 2 ? 80 : 50;
     modal('STOVE', 'Use the stove:', [`Cook meal  +${hungerGain} hunger  (15 min)`, 'Make coffee  (15 min, +20 energy)', 'Cancel'], i => {
-      if (i === 0) { gameState.time += 15; gameState.hunger = cap(gameState.hunger + hungerGain); log('Cooked and ate a meal.', 'g'); markMorningAction('ate'); }
-      else if (i === 1) { gameState.time += 15; gameState.energy = cap(gameState.energy + 20); log('Made and drank coffee.', 'g'); markMorningAction('coffee'); }
+      if (i === 0) { addGameMinutes(15, 'stove_meal'); gameState.hunger = cap(gameState.hunger + hungerGain); log('Cooked and ate a meal.', 'g'); markMorningAction('ate'); }
+      else if (i === 1) { addGameMinutes(15, 'stove_coffee'); gameState.energy = cap(gameState.energy + 20); log('Made and drank coffee.', 'g'); markMorningAction('coffee'); }
     });
   } else if (a === 'table') {
     log('You sit down and rest your feet.');
@@ -1936,8 +2006,8 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
     modal('TOWN HALL', `Factory Level: ${gameState.factoryLv}   Town Level: ${gameState.townLv}\nFactory XP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\nReputation: ${repStr(gameState.rep)}  ${getRepTitle()}\nDisciplines on record: ${gameState.disciplines}`, ['Close'], []);
   } else if (a === 'park') {
     modal('PARK', 'Take a break.', ['Rest 30 min  +15 energy', 'Go for a walk  +10 min', 'Leave'], i => {
-      if (i === 0) { gameState.time += 30; gameState.energy = cap(gameState.energy + 15); log('Rested at the park.', 'g'); }
-      else if (i === 1) { gameState.time += 10; log('Nice walk through the park.', 'g'); }
+      if (i === 0) { addGameMinutes(30, 'park_rest'); gameState.energy = cap(gameState.energy + 15); log('Rested at the park.', 'g'); }
+      else if (i === 1) { addGameMinutes(10, 'park_walk'); log('Nice walk through the park.', 'g'); }
     });
   } else if (a === 'library') {
     const mayaNpc = getNPCById('maya');
@@ -1949,7 +2019,7 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
       'Leave',
     ], i => {
       if (i === 0) {
-        gameState.time += 30;
+        addGameMinutes(30, 'library_study');
         gameState.factoryXP += 25;
         if (mayaBonus) {
           gameState.factoryXP += 15;
@@ -1958,7 +2028,7 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
         log('You studied at the library.', 'g');
         checkFactoryLv();
       }
-      else if (i === 1) { gameState.time += 15; gameState.energy = cap(gameState.energy + 10); log('You read for fun at the library.', 'g'); }
+      else if (i === 1) { addGameMinutes(15, 'library_read'); gameState.energy = cap(gameState.energy + 10); log('You read for fun at the library.', 'g'); }
     });
   } else if (a === 'clinic') {
     const docNpc = getNPCById('doc');
@@ -2047,7 +2117,7 @@ function getTravelOpts() {
 function doTravel(opt, scene, px, py) {
   if (!opt) return;
   if (opt.cost > 0 && !pay(opt.cost)) { log('Not enough money for this travel option.', 'b'); return; }
-  gameState.time += opt.time;
+  addGameMinutes(opt.time, 'travel');
   changeScene(scene, px, py);
   if (scene === 'FACTORY' && !gameState.arrivedToday) {
     gameState.arrivedToday = true;
@@ -2142,7 +2212,7 @@ function doCraft() {
       if (c.mat.wire) gameState.inventory.wire -= c.mat.wire;
       if (c.mat.circuit) gameState.inventory.circuit -= c.mat.circuit;
     }
-    gameState.time += t;
+    addGameMinutes(t, 'craft');
     gameState.energy = Math.max(0, gameState.energy - e);
     addMoney(c.pay);
     gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + c.pay;
@@ -2562,6 +2632,7 @@ function doSleep() {
     gameState.morningRoutineDone = false;
     updateContractsForNewDay();
     gameState.day++;
+    gameState.emit('day_start', { day: gameState.day, time: gameState.time });
     gameState.hunger = Math.max(gameState.hunger - 10, 20);
     checkStoryDayStart();
     checkQuest('first_steps');
@@ -2631,6 +2702,7 @@ function applyFriendshipGain(npc, amount, reason = 'friendship') {
   npc.friendship = Math.min(5, before + amount);
   const gained = (npc.friendship || 0) - before;
   if (gained <= 0) return;
+  gameState.emit('relationship_change', { npcId: npc.id, delta: gained, reason, value: npc.friendship || 0 });
   log(`+${gained} friendship with ${npc.name}.`, 'g');
   const spill = NPC_SPILLOVER[npc.id] || {};
   Object.entries(spill).forEach(([targetId, spillAmt]) => {
@@ -2639,7 +2711,10 @@ function applyFriendshipGain(npc, amount, reason = 'friendship') {
     const oldVal = target.friendship || 0;
     target.friendship = Math.min(5, oldVal + spillAmt);
     const delta = (target.friendship || 0) - oldVal;
-    if (delta > 0) log(`${target.name} heard about your ${reason} with ${npc.name}. +${delta} friendship.`, 'g');
+    if (delta > 0) {
+      gameState.emit('relationship_change', { npcId: target.id, sourceNpcId: npc.id, delta, reason: `${reason}_spillover`, value: target.friendship || 0 });
+      log(`${target.name} heard about your ${reason} with ${npc.name}. +${delta} friendship.`, 'g');
+    }
   });
 }
 function getStoryDaysLeft() {
@@ -2810,16 +2885,17 @@ function changeScene(sc, px, py) { gameState.scene = sc; player.x = px; player.y
 
 // ── PASSIVE ────────────────────────────────────────────────────────────
 function passive() {
+  const { player: playerState, inventory, relationships } = gameState.systems;
   passiveTick++;
   if (passiveTick < 200) return;
   passiveTick = 0;
-  gameState.time++;
+  addGameMinutes(1, 'passive_tick');
   let _hDrain = 0.4;
-  if (gameState.inventory.lunchbox) _hDrain *= 0.8;
+  if (inventory.lunchbox) _hDrain *= 0.8;
   if (gameState.vitaminsToday) _hDrain *= 0.5;
-  gameState.hunger = Math.max(0, gameState.hunger - _hDrain);
-  const energyDrain = gameState.inventory.thermos ? 0.15 * 0.85 : 0.15;
-  gameState.energy = Math.max(0, gameState.energy - energyDrain);
+  playerState.hunger = Math.max(0, playerState.hunger - _hDrain);
+  const energyDrain = inventory.thermos ? 0.15 * 0.85 : 0.15;
+  playerState.energy = Math.max(0, playerState.energy - energyDrain);
   if (gameState.ottoWorkTimer > 0) {
     gameState.ottoWorkTimer = Math.max(0, gameState.ottoWorkTimer - 1);
     if (gameState.ottoWorkTimer === 0) {
@@ -2837,7 +2913,7 @@ function passive() {
   if (gameState.scene === 'STREET' && !gameState.clothed) {
     log('POLICE ARREST! Public indecency — $30 fine, 1 hour detention.', 'b');
     gameState.money = Math.max(0, gameState.money - 30);
-    gameState.time += 60;
+    addGameMinutes(60, 'arrest_penalty');
     gameState.clothed = true;
     changeScene('HOME', 96, 120);
   }
@@ -2853,8 +2929,8 @@ function passive() {
   }
   // Rita hunger warning (once per day)
   const ritaNpc = getNPCById('rita');
-  if (isPerkActive(ritaNpc) && gameState.hunger < 30 && !gameState.ritaWarnedToday) {
-    gameState.ritaWarnedToday = true;
+  if (isPerkActive(ritaNpc) && playerState.hunger < 30 && !relationships.ritaWarnedToday) {
+    relationships.ritaWarnedToday = true;
     log("Rita: 'Hey, you look hungry! Grab something to eat.'", 'w');
   }
 }
@@ -2895,30 +2971,31 @@ function formatTime(m) {
 }
 
 function updateHUD() {
-  document.getElementById('ht').textContent = formatTime(gameState.time);
-  document.getElementById('hd').textContent = DAYS[(gameState.day - 1) % 7] + ' ' + gameState.day;
+  const { time, player, tasks: taskSystem, town } = gameState.systems;
+  document.getElementById('ht').textContent = formatTime(time.time);
+  document.getElementById('hd').textContent = DAYS[(time.day - 1) % 7] + ' ' + time.day;
   const me = document.getElementById('hm');
-  me.textContent = '$' + gameState.money;
-  me.className = 'hv ' + (gameState.money < 10 ? 'd' : gameState.money < 30 ? 'w' : 'g');
+  me.textContent = '$' + player.money;
+  me.className = 'hv ' + (player.money < 10 ? 'd' : player.money < 30 ? 'w' : 'g');
   const hh = document.getElementById('hh');
-  hh.textContent = Math.round(gameState.hunger) + '%';
-  hh.className = 'hv ' + (gameState.hunger < 25 ? 'd' : gameState.hunger < 50 ? 'w' : '');
+  hh.textContent = Math.round(player.hunger) + '%';
+  hh.className = 'hv ' + (player.hunger < 25 ? 'd' : player.hunger < 50 ? 'w' : '');
   const he = document.getElementById('he');
-  he.textContent = Math.round(gameState.energy) + '%';
-  he.className = 'hv ' + (gameState.energy < 25 ? 'd' : gameState.energy < 50 ? 'w' : '');
-  const done = gameState.tasks.filter(t => t).length;
+  he.textContent = Math.round(player.energy) + '%';
+  he.className = 'hv ' + (player.energy < 25 ? 'd' : player.energy < 50 ? 'w' : '');
+  const done = taskSystem.tasks.filter(t => t).length;
   const te = document.getElementById('htk');
   te.textContent = done + '/3';
-  te.className = 'hv ' + (done === 3 ? 'g' : gameState.arrivedToday && gameState.time > 9 * 60 ? 'd' : '');
-  document.getElementById('hfl').textContent = 'Lv ' + gameState.factoryLv;
-  document.getElementById('htl').textContent = 'Lv ' + gameState.townLv;
-  document.getElementById('sb-loc').textContent = '📍 ' + gameState.scene;
-  document.getElementById('sb-rep').textContent = `Rep: ${repStr(gameState.rep)}  ${getRepTitle()}`;
-  document.getElementById('sb-disc').textContent = 'Disciplines: ' + gameState.disciplines;
+  te.className = 'hv ' + (done === 3 ? 'g' : time.arrivedToday && time.time > 9 * 60 ? 'd' : '');
+  document.getElementById('hfl').textContent = 'Lv ' + town.factoryLv;
+  document.getElementById('htl').textContent = 'Lv ' + town.townLv;
+  document.getElementById('sb-loc').textContent = '📍 ' + town.scene;
+  document.getElementById('sb-rep').textContent = `Rep: ${repStr(player.rep)}  ${getRepTitle()}`;
+  document.getElementById('sb-disc').textContent = 'Disciplines: ' + player.disciplines;
   const w = [];
-  if (gameState.hunger < 30) w.push('⚠ HUNGRY');
-  if (gameState.energy < 25) w.push('⚠ TIRED');
-  if (!gameState.clothed) w.push('⚠ UNCLOTHED');
+  if (player.hunger < 30) w.push('⚠ HUNGRY');
+  if (player.energy < 25) w.push('⚠ TIRED');
+  if (!player.clothed) w.push('⚠ UNCLOTHED');
   const sw = document.getElementById('sb-warn');
   sw.textContent = w.join('   ');
   sw.className = w.length ? 'sb-warn' : '';
@@ -3040,6 +3117,7 @@ function applyLoad(raw) {
   try {
     const data = JSON.parse(raw);
     Object.assign(gameState, data.gameState);
+    setupSharedState(gameState);
     if (!gameState.quests) gameState.quests = [];
     if (gameState.totalCrafted === undefined) gameState.totalCrafted = 0;
     if (gameState.totalEarned === undefined) gameState.totalEarned = 0;
