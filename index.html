@@ -830,6 +830,24 @@ function makePlayer(key, frame, facing, clothed, uniform) {
   makePlayer(`pl_${fr}_${fa}_${cl ? 1 : 0}_${un ? 1 : 0}`, fr, fa, cl, un);
 }))));
 
+const taskPool = [
+  { id: 'sweep', label: 'SWEEP FLOOR', time: 15, energy: 8, xp: 5, description: 'Clean the factory floor.' },
+  { id: 'boiler', label: 'CHECK BOILER', time: 15, energy: 8, xp: 5, description: 'Inspect and log boiler pressure.' },
+  { id: 'log_parts', label: 'LOG PARTS', time: 15, energy: 6, xp: 5, description: 'Count and record parts in stock.' },
+  { id: 'oil_machines', label: 'OIL MACHINES', time: 20, energy: 12, xp: 8, description: 'Lubricate the conveyor system.' },
+  { id: 'inspect_welds', label: 'INSPECT WELDS', time: 20, energy: 10, xp: 8, description: 'Check weld integrity on frames.' },
+  { id: 'sort_stock', label: 'SORT STOCK', time: 15, energy: 7, xp: 6, description: 'Organize incoming material bins.' },
+  { id: 'test_output', label: 'TEST OUTPUT', time: 25, energy: 14, xp: 10, description: 'Run quality checks on products.' },
+  { id: 'repair_line', label: 'REPAIR LINE', time: 30, energy: 18, xp: 12, description: 'Fix a jammed section of line.' },
+];
+
+const FACTORY_UPGRADES = [
+  { level: 2, name: 'Improved Tools', cost: 80, description: 'Unlocks Gear recipe. Tasks cost 10% less energy.' },
+  { level: 3, name: 'New Equipment', cost: 160, description: 'Unlocks Motor recipe. Craft station speed +10%.' },
+  { level: 4, name: 'Automation Line', cost: 280, description: 'Unlocks Processor recipe. Otto works 25% faster.' },
+  { level: 5, name: 'Full Production', cost: 400, description: 'Unlocks all recipes. +$15 base wage. Town reaches City.' },
+];
+
 // ── GAME STATE ────────────────────────────────────────────
 const gameState = {
   time: 6 * 60,
@@ -839,7 +857,16 @@ const gameState = {
   energy: 100,
   clothed: true,
   tasks: [false, false, false],
+  dailyTasks: ['sweep', 'boiler', 'log_parts'],
   taskNames: ['SWEEP FLOOR', 'CHECK BOILER', 'LOG PARTS'],
+  assignedTasks: { 0: null, 1: null, 2: null },
+  ottoWorkTimer: 0,
+  ottoTasksCompleted: 0,
+  improvedTools: false,
+  newEquipment: false,
+  automationLine: false,
+  fullProduction: false,
+  diversifiedToday: false,
   disciplines: 0,
   rep: 3,
   factoryLv: 1,
@@ -910,7 +937,7 @@ const gameState = {
   ritaWarnedToday: false,
   craftItems: [
     { id: 'bolt', label: 'BASIC BOLT', time: 15, energy: 8, pay: 12, minLv: 1, mat: { scrapMetal: 2 } },
-    { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 24, minLv: 1, mat: { scrapMetal: 3, wire: 1 } },
+    { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 24, minLv: 2, mat: { scrapMetal: 3, wire: 1 } },
     { id: 'motor', label: 'MOTOR', time: 40, energy: 22, pay: 45, minLv: 3, mat: { wire: 2, circuit: 1 } },
     { id: 'processor', label: 'PROCESSOR', time: 50, energy: 28, pay: 65, minLv: 4, mat: { circuit: 2, wire: 1 } },
   ],
@@ -1020,6 +1047,46 @@ const gameState = {
       reward: { money: 35, xp: 30, rep: 0.5 },
       progress: 0,
     },
+    {
+      id: 'diversified',
+      title: 'Diversified',
+      description: 'Complete 3 different types of factory tasks in one day.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'tasks_diversified', target: 1 },
+      reward: { money: 20, xp: 15, rep: 0.2 },
+      progress: 0,
+    },
+    {
+      id: 'delegator',
+      title: 'Delegator',
+      description: 'Have Otto complete 3 tasks for you total.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'otto_tasks', target: 3 },
+      reward: { money: 25, xp: 20, rep: 0.3 },
+      progress: 0,
+    },
+    {
+      id: 'master_crafter',
+      title: 'Master Crafter',
+      description: 'Craft 20 items total.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'total_crafted', target: 20 },
+      reward: { money: 60, xp: 40, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'full_factory',
+      title: 'Full Factory',
+      description: 'Upgrade the factory to maximum level (Lv 5).',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'factory_level', target: 5 },
+      reward: { money: 150, xp: 100, rep: 1 },
+      progress: 0,
+    },
   ],
 };
 
@@ -1063,12 +1130,71 @@ const SCENE_OBJECTS = {
     { x: 16, y: 16, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
     { x: 112, y: 16, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
     { x: 208, y: 16, w: 48, h: 32, lbl: 'LOG PARTS', act: 'task2', taskIdx: 2, col: '#223344' },
+    { x: 224, y: 60, w: 48, h: 32, lbl: 'ASSIGN\nTASKS', act: 'assign_tasks', col: '#1a3a2a' },
     { x: 32, y: 112, w: 48, h: 48, lbl: 'CRAFT', act: 'craft', spr: 'craftstation' },
     { x: 128, y: 112, w: 48, h: 48, lbl: 'UPGRADE', act: 'upgrade', col: '#443322' },
     { x: 224, y: 112, w: 48, h: 48, lbl: 'STORAGE', act: 'storage', col: '#333355' },
     { x: 112, y: 196, w: 64, h: 32, lbl: 'EXIT', act: 'exit_factory', portal: true, col: '#664422' },
   ]
 };
+
+function getTaskDef(taskId) {
+  return taskPool.find(t => t.id === taskId) || taskPool[0];
+}
+
+function getDailyTaskByIndex(idx) {
+  const taskId = gameState.dailyTasks[idx] || taskPool[idx % taskPool.length].id;
+  return getTaskDef(taskId);
+}
+
+function pickDailyTasks() {
+  const ids = taskPool.map(t => t.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return ids.slice(0, 3);
+}
+
+function getAssignedTaskIndex(workerId) {
+  const idx = [0, 1, 2].find(i => gameState.assignedTasks[i] === workerId);
+  return idx === undefined ? -1 : idx;
+}
+
+function refreshDailyTaskUI() {
+  gameState.taskNames = [0, 1, 2].map(i => getDailyTaskByIndex(i).label);
+  for (let i = 0; i < 3; i++) {
+    const obj = SCENE_OBJECTS.FACTORY.find(o => o.act === `task${i}`);
+    if (obj) obj.lbl = gameState.taskNames[i];
+  }
+}
+
+function handleDailyTaskCompletion() {
+  if (gameState.tasks.every(t => t)) {
+    if (new Set(gameState.dailyTasks).size === 3) {
+      gameState.diversifiedToday = true;
+      checkQuest('diversified');
+    }
+    log('All 3 tasks done! Head to the Craft Station.', 'g');
+    checkQuest('first_day');
+  }
+}
+
+function completeTaskByIndex(idx, source = 'player') {
+  if (gameState.tasks[idx]) return false;
+  const task = getDailyTaskByIndex(idx);
+  const energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+  if (source === 'player') {
+    if (gameState.energy < energyCost) { log('Too tired to do that task right now.', 'w'); return false; }
+    gameState.time += task.time;
+    gameState.energy = Math.max(0, gameState.energy - energyCost);
+  }
+  gameState.tasks[idx] = true;
+  gameState.factoryXP += task.xp;
+  log('Task complete: ' + task.label + ' ✓', 'g');
+  checkFactoryLv();
+  return true;
+}
 
 // tile sprite cache
 const tileSpr = {};
@@ -1196,6 +1322,43 @@ function drawSceneDecor() {
     }
     ctx.fillStyle = PALETTE.factMachineLight;
     ctx.fillRect(80, 80, 160, 2);
+    if (gameState.factoryLv >= 2) {
+      ctx.fillStyle = PALETTE.factConveyor;
+      ctx.fillRect(80, 96, 160, 12);
+      for (let c = 80; c < 240; c += 12) {
+        ctx.fillStyle = c % 24 < 12 ? PALETTE.factConveyor : PALETTE.factConveyor2;
+        ctx.fillRect(c, 96, 12, 12);
+      }
+      ctx.fillStyle = PALETTE.factMachineLight;
+      ctx.fillRect(80, 96, 160, 2);
+    }
+    if (gameState.factoryLv >= 3) {
+      const blinkOn = Math.floor(Date.now() / 500) % 2 === 0;
+      const bright = ['#00ff66', '#ffd255', '#66ddff'];
+      const dim = ['#0a4422', '#554a1a', '#1f3f55'];
+      [40, 120, 200].forEach((x, i) => {
+        ctx.fillStyle = blinkOn ? bright[i] : dim[i];
+        ctx.fillRect(x, 8, 4, 4);
+      });
+    }
+    if (gameState.factoryLv >= 4) {
+      ctx.fillStyle = 'rgba(255,120,0,0.10)';
+      ctx.fillRect(0, CANVAS_H - 36, CANVAS_W, 8);
+      ctx.fillStyle = 'rgba(255,170,0,0.16)';
+      ctx.fillRect(0, CANVAS_H - 28, CANVAS_W, 8);
+      ctx.fillStyle = 'rgba(255,210,60,0.22)';
+      ctx.fillRect(0, CANVAS_H - 20, CANVAS_W, 8);
+      ctx.fillStyle = 'rgba(255,240,120,0.16)';
+      ctx.fillRect(0, CANVAS_H - 12, CANVAS_W, 8);
+    }
+    if (gameState.factoryLv >= 5) {
+      drawLabel('FULL PRODUCTION', 102, 18, {
+        size: 6,
+        color: '#ffe86e',
+        bg: 'rgba(70,30,0,0.55)',
+        border: 'rgba(255,220,100,0.9)'
+      });
+    }
   }
 }
 
@@ -1479,29 +1642,35 @@ function interact() {
     doUpgrade();
   } else if (a === 'craft') {
     doCraft();
+  } else if (a === 'assign_tasks') {
+    doAssignTasks();
   } else if (a && a.startsWith('task')) {
     const idx = o.taskIdx !== undefined ? o.taskIdx : +a.slice(4);
     if (gameState.tasks[idx]) { log('Already completed: ' + gameState.taskNames[idx]); return; }
-    gameState.time += 15;
-    gameState.energy = Math.max(0, gameState.energy - 8);
-    gameState.tasks[idx] = true;
-    gameState.factoryXP += 5;
-    log('Task complete: ' + gameState.taskNames[idx] + ' ✓', 'g');
-    checkFactoryLv();
-    const tasksDoneNow = gameState.tasks.filter(t => t).length;
-    if (tasksDoneNow === 2) {
-      const ottoNpc = gameState.npcs.find(n => n.id === 'otto');
-      if (ottoNpc && (ottoNpc.friendship || 0) >= 3 && Math.random() < 0.4) {
-        const remIdx = gameState.tasks.map((t, i) => !t ? i : -1).filter(i => i >= 0);
-        if (remIdx.length > 0) {
-          gameState.tasks[remIdx[0]] = true;
-          gameState.factoryXP += 5;
-          log(`Otto says: 'I got that one for you.' — ${gameState.taskNames[remIdx[0]]} ✓`, 'g');
-          checkFactoryLv();
+    if (gameState.assignedTasks[idx] === 'otto') { log('Otto is already working on that task.', 'w'); return; }
+    const task = getDailyTaskByIndex(idx);
+    const energyCost = gameState.improvedTools ? Math.floor(task.energy * 0.9) : task.energy;
+    modal(
+      task.label,
+      `${task.description}\nTime Cost: ${task.time} min\nEnergy Cost: ${energyCost}`,
+      [`Do it (${task.time}min, -${energyCost}en)`, 'Not now'],
+      i => {
+        if (i !== 0) return;
+        if (!completeTaskByIndex(idx, 'player')) return;
+        const tasksDoneNow = gameState.tasks.filter(t => t).length;
+        if (tasksDoneNow === 2) {
+          const ottoNpc = gameState.npcs.find(n => n.id === 'otto');
+          if (ottoNpc && (ottoNpc.friendship || 0) >= 3 && Math.random() < 0.4) {
+            const remIdx = gameState.tasks.map((t, ii) => !t ? ii : -1).filter(ii => ii >= 0 && gameState.assignedTasks[ii] !== 'otto');
+            if (remIdx.length > 0) {
+              completeTaskByIndex(remIdx[0], 'otto_perk');
+              log(`Otto says: 'I got that one for you.' — ${gameState.taskNames[remIdx[0]]} ✓`, 'g');
+            }
+          }
         }
+        handleDailyTaskCompletion();
       }
-    }
-    if (gameState.tasks.every(t => t)) { log('All 3 tasks done! Head to the Craft Station.', 'g'); checkQuest('first_day'); }
+    );
   }
 }
 
@@ -1550,17 +1719,55 @@ function matLabel(mat) {
   return ' [' + Object.entries(mat).map(([k, v]) => `${v}x ${k === 'scrapMetal' ? 'Scrap' : k === 'wire' ? 'Wire' : 'Circuit'}`).join(', ') + ']';
 }
 
+function getCraftTime(c) {
+  if (!gameState.newEquipment) return c.time;
+  return Math.max(5, Math.floor(c.time * 0.9));
+}
+
+function doAssignTasks() {
+  const assignedIdx = getAssignedTaskIndex('otto');
+  const listLines = [0, 1, 2].map(idx => {
+    const label = gameState.taskNames[idx];
+    if (gameState.tasks[idx]) return `${label} — DONE`;
+    if (gameState.assignedTasks[idx] === 'otto') return `${label} — IN PROGRESS (Otto)`;
+    return `${label} — Assign to Otto`;
+  });
+  const opts = [];
+  const choiceMap = [];
+  for (let idx = 0; idx < 3; idx++) {
+    if (!gameState.tasks[idx] && !gameState.assignedTasks[idx] && assignedIdx === -1) {
+      opts.push(`Assign: ${gameState.taskNames[idx]}`);
+      choiceMap.push(idx);
+    }
+  }
+  opts.push('Close');
+  modal('ASSIGN TASKS', listLines.join('\n'), opts, i => {
+    if (i >= choiceMap.length) return;
+    const ottoNpc = gameState.npcs.find(n => n.id === 'otto');
+    if (!ottoNpc || (ottoNpc.friendship || 0) < 1) { log("Otto: 'Do it yourself.'", 'b'); return; }
+    const taskIdx = choiceMap[i];
+    gameState.assignedTasks = { 0: null, 1: null, 2: null };
+    gameState.assignedTasks[taskIdx] = 'otto';
+    const task = getDailyTaskByIndex(taskIdx);
+    const speedMult = gameState.automationLine ? 1.5 : 2;
+    gameState.ottoWorkTimer = Math.max(1, Math.ceil(task.time * speedMult));
+    log('Otto is on it.', 'g');
+  });
+}
+
 function doCraft() {
   if (!gameState.tasks.every(t => t)) { log('You must finish all 3 tasks before crafting!', 'w'); return; }
-  const avail = gameState.craftItems.filter(c => c.minLv <= gameState.factoryLv);
+  const avail = gameState.craftItems.filter(c => gameState.fullProduction || c.minLv <= gameState.factoryLv);
   if (!avail.length) { log('No craft recipes available yet.', 'w'); return; }
   modal('CRAFT STATION', 'Choose what to make:', [...avail.map(c => {
     const e = getCraftEnergy(c);
-    return `${c.label}  +$${c.pay}  (${c.time}min, -${e}en)${matLabel(c.mat)}`;
+    const t = getCraftTime(c);
+    return `${c.label}  +$${c.pay}  (${t}min, -${e}en)${matLabel(c.mat)}`;
   }), 'Cancel'], i => {
     if (i >= avail.length) return;
     const c = avail[i];
     const e = getCraftEnergy(c);
+    const t = getCraftTime(c);
     const missing = getMissingMats(c);
     if (missing.length) { log('Need: ' + missing.join(', '), 'b'); return; }
     if (gameState.energy < e) { log('Too tired to craft that right now.', 'w'); return; }
@@ -1569,7 +1776,7 @@ function doCraft() {
       if (c.mat.wire) gameState.inventory.wire -= c.mat.wire;
       if (c.mat.circuit) gameState.inventory.circuit -= c.mat.circuit;
     }
-    gameState.time += c.time;
+    gameState.time += t;
     gameState.energy = Math.max(0, gameState.energy - e);
     gameState.money += c.pay;
     gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + c.pay;
@@ -1579,6 +1786,7 @@ function doCraft() {
     log(`Crafted: ${c.label}  +$${c.pay}`, 'g');
     checkFactoryLv();
     checkQuest('productive_worker');
+    checkQuest('master_crafter');
   });
 }
 
@@ -1611,18 +1819,30 @@ function triggerTownLevelUp(newLv) {
 }
 
 function doUpgrade() {
-  const cost = gameState.factoryLv * 80;
-  modal('UPGRADE STATION', `Upgrade factory to Level ${gameState.factoryLv + 1}?\n\nCost: $${cost}\nCurrent XP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\n\nUnlocks better crafting recipes.`, [`Upgrade  ($${cost})`, 'Cancel'], i => {
+  const next = FACTORY_UPGRADES.find(u => u.level === gameState.factoryLv + 1);
+  if (!next) { modal('UPGRADE STATION', 'Factory is already at maximum level.', ['Close'], () => {}); return; }
+  const currentName = gameState.factoryLv === 1 ? 'Starter Line' : (FACTORY_UPGRADES.find(u => u.level === gameState.factoryLv)?.name || 'Factory');
+  modal('UPGRADE STATION', `Current: Lv ${gameState.factoryLv} — ${currentName}\nNext: Lv ${next.level} — ${next.name}\n\n${next.description}\n\nXP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\nCost: $${next.cost}`, [`Upgrade — $${next.cost}`, 'Cancel'], i => {
     if (i === 0) {
-      if (gameState.money < cost) { log('Not enough money to upgrade.', 'b'); return; }
+      if (gameState.money < next.cost) { log('Not enough money to upgrade.', 'b'); return; }
       const oldTownLv = gameState.townLv;
-      gameState.money -= cost;
+      gameState.money -= next.cost;
       gameState.factoryLv++;
       gameState.factoryXP = 0;
+      if (next.level >= 2) gameState.improvedTools = true;
+      if (next.level >= 3) gameState.newEquipment = true;
+      if (next.level >= 4) gameState.automationLine = true;
+      if (next.level >= 5 && !gameState.fullProduction) {
+        gameState.fullProduction = true;
+        gameState.wage += 15;
+        log(`Full Production! Base wage increased to $${gameState.wage}.`, 'g');
+      }
       if (gameState.townLv < gameState.factoryLv) gameState.townLv = Math.min(gameState.factoryLv, 5);
-      log(`Factory upgraded to Level ${gameState.factoryLv}! The town grows.`, 'g');
+      log(`Factory upgraded to Level ${gameState.factoryLv}! ${next.name} installed.`, 'g');
       checkQuest('upgrade_ready');
+      checkQuest('full_factory');
       if (gameState.townLv > oldTownLv) triggerTownLevelUp(gameState.townLv);
+      applyTownBuildings();
     }
   });
 }
@@ -1866,7 +2086,12 @@ function doSleep() {
     if (gameState.money > 100) checkQuest('in_the_black');
     gameState.time = 6 * 60;
     gameState.energy = Math.min(100, gameState.energy + 65);
+    gameState.dailyTasks = pickDailyTasks();
     gameState.tasks = [false, false, false];
+    gameState.assignedTasks = { 0: null, 1: null, 2: null };
+    gameState.ottoWorkTimer = 0;
+    gameState.diversifiedToday = false;
+    refreshDailyTaskUI();
     gameState.arrivedToday = false;
     gameState.shiftDone = false;
     gameState.craftedToday = 0;
@@ -1928,6 +2153,20 @@ function passive() {
   gameState.hunger = Math.max(0, gameState.hunger - _hDrain);
   const energyDrain = gameState.inventory.thermos ? 0.15 * 0.85 : 0.15;
   gameState.energy = Math.max(0, gameState.energy - energyDrain);
+  if (gameState.ottoWorkTimer > 0) {
+    gameState.ottoWorkTimer = Math.max(0, gameState.ottoWorkTimer - 1);
+    if (gameState.ottoWorkTimer === 0) {
+      const taskIdx = getAssignedTaskIndex('otto');
+      if (taskIdx !== -1 && !gameState.tasks[taskIdx]) {
+        completeTaskByIndex(taskIdx, 'otto');
+        gameState.ottoTasksCompleted = (gameState.ottoTasksCompleted || 0) + 1;
+        log('Otto finished: ' + gameState.taskNames[taskIdx], 'g');
+        checkQuest('delegator');
+        handleDailyTaskCompletion();
+      }
+      gameState.assignedTasks = { 0: null, 1: null, 2: null };
+    }
+  }
   if (gameState.scene === 'STREET' && !gameState.clothed) {
     log('POLICE ARREST! Public indecency — $30 fine, 1 hour detention.', 'b');
     gameState.money = Math.max(0, gameState.money - 30);
@@ -2103,6 +2342,15 @@ function applyLoad(raw) {
     if (gameState.rentDebt === undefined) gameState.rentDebt = 0;
     if (gameState.moneyEarnedToday === undefined) gameState.moneyEarnedToday = 0;
     if (gameState.materialsBought === undefined) gameState.materialsBought = 0;
+    if (!Array.isArray(gameState.dailyTasks) || gameState.dailyTasks.length !== 3) gameState.dailyTasks = ['sweep', 'boiler', 'log_parts'];
+    if (!gameState.assignedTasks) gameState.assignedTasks = { 0: null, 1: null, 2: null };
+    if (gameState.ottoWorkTimer === undefined) gameState.ottoWorkTimer = 0;
+    if (gameState.ottoTasksCompleted === undefined) gameState.ottoTasksCompleted = 0;
+    if (gameState.improvedTools === undefined) gameState.improvedTools = gameState.factoryLv >= 2;
+    if (gameState.newEquipment === undefined) gameState.newEquipment = gameState.factoryLv >= 3;
+    if (gameState.automationLine === undefined) gameState.automationLine = gameState.factoryLv >= 4;
+    if (gameState.fullProduction === undefined) gameState.fullProduction = gameState.factoryLv >= 5;
+    if (gameState.diversifiedToday === undefined) gameState.diversifiedToday = false;
     const inv = gameState.inventory;
     if (inv.scrapMetal === undefined) inv.scrapMetal = 0;
     if (inv.wire === undefined) inv.wire = 0;
@@ -2124,6 +2372,10 @@ function applyLoad(raw) {
       { id: 'town_friend', title: 'Town Friend', description: 'Reach friendship level 3 with any NPC.', type: 'relationship', status: 'available', goal: { type: 'any_friend_3', target: 1 }, reward: { money: 20, xp: 10, rep: 0.5 }, progress: 0 },
       { id: 'gift_giver', title: 'Gift Giver', description: 'Give 5 gifts to NPCs.', type: 'side', status: 'available', goal: { type: 'total_gifts', target: 5 }, reward: { money: 15, xp: 10, rep: 0.3 }, progress: 0 },
       { id: 'factory_crew', title: 'Factory Crew', description: 'Reach friendship level 2 with both Mr. Vance and Otto.', type: 'relationship', status: 'available', goal: { type: 'factory_crew', target: 1 }, reward: { money: 35, xp: 30, rep: 0.5 }, progress: 0 },
+      { id: 'diversified', title: 'Diversified', description: 'Complete 3 different types of factory tasks in one day.', type: 'side', status: 'available', goal: { type: 'tasks_diversified', target: 1 }, reward: { money: 20, xp: 15, rep: 0.2 }, progress: 0 },
+      { id: 'delegator', title: 'Delegator', description: 'Have Otto complete 3 tasks for you total.', type: 'side', status: 'available', goal: { type: 'otto_tasks', target: 3 }, reward: { money: 25, xp: 20, rep: 0.3 }, progress: 0 },
+      { id: 'master_crafter', title: 'Master Crafter', description: 'Craft 20 items total.', type: 'progression', status: 'available', goal: { type: 'total_crafted', target: 20 }, reward: { money: 60, xp: 40, rep: 0.5 }, progress: 0 },
+      { id: 'full_factory', title: 'Full Factory', description: 'Upgrade the factory to maximum level (Lv 5).', type: 'progression', status: 'available', goal: { type: 'factory_level', target: 5 }, reward: { money: 150, xp: 100, rep: 1 }, progress: 0 },
     ];
     newQuests.forEach(nq => { if (!gameState.quests.find(q => q.id === nq.id)) gameState.quests.push(nq); });
     // Update NPC profiles for saves that predate expanded NPC data
@@ -2145,6 +2397,7 @@ function applyLoad(raw) {
     const px = data.playerPos ? data.playerPos.x : player.x;
     const py = data.playerPos ? data.playerPos.y : player.y;
     if (data.playerPos) player.facing = data.playerPos.facing || 2;
+    refreshDailyTaskUI();
     changeScene(gameState.scene, px, py);
     applyTownBuildings();
     updateHUD();
@@ -2178,6 +2431,8 @@ function checkQuest(questId) {
   else if (q.goal.type === 'own_items') progress = (q.goal.items || []).every(id => gameState.inventory[id]) ? 1 : 0;
   else if (q.goal.type === 'any_friend_3') progress = gameState.npcs.some(n => (n.friendship || 0) >= 3) ? 1 : 0;
   else if (q.goal.type === 'total_gifts') progress = gameState.totalGiftsGiven || 0;
+  else if (q.goal.type === 'tasks_diversified') progress = gameState.diversifiedToday ? 1 : 0;
+  else if (q.goal.type === 'otto_tasks') progress = gameState.ottoTasksCompleted || 0;
   else if (q.goal.type === 'factory_crew') {
     const vq = gameState.npcs.find(n => n.id === 'boss');
     const oq = gameState.npcs.find(n => n.id === 'otto');
@@ -2262,6 +2517,9 @@ document.addEventListener('keyup', e => keys[e.key] = false);
     dp.appendChild(btn);
   });
 })();
+
+gameState.dailyTasks = pickDailyTasks();
+refreshDailyTaskUI();
 
 function loop() { moveP(); draw(); updateHUD(); requestAnimationFrame(loop); }
 loop();
