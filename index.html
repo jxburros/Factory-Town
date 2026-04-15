@@ -227,6 +227,10 @@ canvas {
   color: #ff5555 !important;
   font-size: 6px;
 }
+
+.sb-story-warn { color: #ff5555 !important; }
+.sb-story-soon { color: #ffb347 !important; }
+.sb-story-win { color: #ffd700 !important; }
 </style>
 <div id="gw">
 <div id="hud">
@@ -249,6 +253,7 @@ canvas {
   <span id="sb-warn"></span>
   <span id="sb-rep">Rep: ★★★☆☆  Respected</span>
   <span id="sb-disc">Disciplines: 0</span>
+  <span id="sb-story"></span>
 </div>
 <div id="dpad">
   <div class="dp" id="dpad-el"></div>
@@ -860,6 +865,15 @@ const REPUTATION_TIERS = [
   { min: 5, max: 5, title: 'Town Legend', effect: 'All perks active regardless of friendship level' },
 ];
 
+
+const CONTRACT_TEMPLATES = [
+  { title: 'Bolt Bulk Order', item: 'bolt', qty: 8, reward: 65, days: 4, minFactoryLv: 1 },
+  { title: 'Gear Shipment', item: 'gear', qty: 5, reward: 80, days: 4, minFactoryLv: 1 },
+  { title: 'Motor Contract', item: 'motor', qty: 3, reward: 95, days: 5, minFactoryLv: 3 },
+  { title: 'Processor Order', item: 'processor', qty: 2, reward: 110, days: 5, minFactoryLv: 4 },
+  { title: 'Emergency Bolts', item: 'bolt', qty: 12, reward: 90, days: 3, minFactoryLv: 1 },
+  { title: 'Premium Gears', item: 'gear', qty: 8, reward: 120, days: 5, minFactoryLv: 2 },
+];
 const NPC_SPILLOVER = {
   boss: { otto: 1 },
   otto: { boss: 1 },
@@ -904,6 +918,7 @@ const gameState = {
   travelMethod: 'walk',
   craftedToday: 0,
   totalCrafted: 0,
+  totalEarned: 0,
   rentDebt: 0,
   moneyEarnedToday: 0,
   materialsBought: 0,
@@ -1138,6 +1153,96 @@ const gameState = {
       status: 'available',
       goal: { type: 'factory_level', target: 5 },
       reward: { money: 150, xp: 100, rep: 1 },
+      progress: 0,
+    },
+    {
+      id: 'first_steps',
+      title: 'First Steps',
+      description: 'Complete your first full week at the factory (7 days).',
+      type: 'progression',
+      status: 'locked',
+      goal: { type: 'day_reached', target: 8 },
+      reward: { money: 45, xp: 30, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'momentum',
+      title: 'Momentum',
+      description: 'Craft 10 items and upgrade the factory to Level 3.',
+      type: 'progression',
+      status: 'locked',
+      goal: { type: 'momentum', target: 1 },
+      reward: { money: 60, xp: 40, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'town_rising',
+      title: 'Town Rising',
+      description: 'Grow the town to Small Town and befriend 3 NPCs.',
+      type: 'progression',
+      status: 'locked',
+      goal: { type: 'town_rising', target: 1 },
+      reward: { money: 75, xp: 50, rep: 1 },
+      progress: 0,
+    },
+    {
+      id: 'final_push',
+      title: 'Final Push',
+      description: 'Reach Factory Level 4 and earn $500 total.',
+      type: 'progression',
+      status: 'locked',
+      goal: { type: 'final_push', target: 1 },
+      reward: { money: 80, xp: 60, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'legend',
+      title: 'Legend',
+      description: 'You saved the factory and the town. A true legend.',
+      type: 'progression',
+      status: 'locked',
+      goal: { type: 'factory_level', target: 5 },
+      reward: { money: 200, xp: 100, rep: 2 },
+      progress: 0,
+    },
+    {
+      id: 'first_contract',
+      title: 'First Contract',
+      description: 'Accept and complete your first contract.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'contracts_completed', target: 1 },
+      reward: { money: 30, xp: 20, rep: 0.3 },
+      progress: 0,
+    },
+    {
+      id: 'contract_worker',
+      title: 'Contract Worker',
+      description: 'Complete 5 contracts total.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'contracts_completed', target: 5 },
+      reward: { money: 75, xp: 40, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'under_pressure',
+      title: 'Under Pressure',
+      description: 'Complete a contract with only 1 day remaining.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'clutch_contract_done', target: 1 },
+      reward: { money: 40, xp: 25, rep: 0.4 },
+      progress: 0,
+    },
+    {
+      id: 'on_schedule',
+      title: 'On Schedule',
+      description: 'Complete 3 contracts without letting any fail.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'contract_streak', target: 3 },
+      reward: { money: 60, xp: 35, rep: 0.5 },
       progress: 0,
     },
   ],
@@ -1727,6 +1832,8 @@ function interact() {
     doUpgrade();
   } else if (a === 'craft') {
     doCraft();
+  } else if (a === 'contracts') {
+    doContractBoard();
   } else if (a === 'assign_tasks') {
     doAssignTasks();
   } else if (a && a.startsWith('task')) {
@@ -1848,8 +1955,9 @@ function doCraft() {
     const e = getCraftEnergy(c);
     const t = getCraftTime(c);
     return `${c.label}  +$${c.pay}  (${t}min, -${e}en)${matLabel(c.mat)}`;
-  }), 'Cancel'], i => {
-    if (i >= avail.length) return;
+  }), 'DELIVER', 'Cancel'], i => {
+    if (i === avail.length) { doContractBoard(); return; }
+    if (i > avail.length) return;
     const c = avail[i];
     const e = getCraftEnergy(c);
     const t = getCraftTime(c);
@@ -1863,15 +1971,17 @@ function doCraft() {
     }
     gameState.time += t;
     gameState.energy = Math.max(0, gameState.energy - e);
-    gameState.money += c.pay;
+    addMoney(c.pay);
     gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + c.pay;
     gameState.factoryXP += c.pay;
     gameState.craftedToday++;
     gameState.totalCrafted++;
     log(`Crafted: ${c.label}  +$${c.pay}`, 'g');
+    deliverCraftToContracts(c.id);
     checkFactoryLv();
     checkQuest('productive_worker');
     checkQuest('master_crafter');
+    checkQuest('momentum');
   });
 }
 
@@ -1888,12 +1998,17 @@ function applyTownBuildings() {
       SCENE_OBJECTS['STREET'].push(Object.assign({}, def));
     }
   }
+  const hasBoard = SCENE_OBJECTS['STREET'].find(o => o.act === 'contracts');
+  if (gameState.townLv >= 2 && !hasBoard) {
+    SCENE_OBJECTS['STREET'].push({ x: 56, y: 60, w: 32, h: 32, lbl: 'CONTRACTS', act: 'contracts', col: '#2a1a4a' });
+  }
 }
 
 function triggerTownLevelUp(newLv) {
   const info = TOWN_LEVELS[newLv - 1];
   log(`The town has grown to ${info.name}!`, 'w');
   applyTownBuildings();
+  triggerStoryProgress();
   const unlockLine = info.unlocks ? `New building unlocked:\n${info.unlocks} added to STREET!` : '';
   modal(
     'TOWN GROWS!',
@@ -1926,6 +2041,9 @@ function doUpgrade() {
       log(`Factory upgraded to Level ${gameState.factoryLv}! ${next.name} installed.`, 'g');
       checkQuest('upgrade_ready');
       checkQuest('full_factory');
+      checkQuest('momentum');
+      checkQuest('final_push');
+      triggerStoryProgress();
       if (gameState.townLv > oldTownLv) triggerTownLevelUp(gameState.townLv);
       applyTownBuildings();
     }
@@ -2074,8 +2192,9 @@ function doMarket() {
 }
 
 function talkNPC(n) {
+  const storyLine = getStoryDialogue(n);
   const f = n.friendship || 0;
-  const line = n.dialog ? n.dialog[Math.min(f, n.dialog.length - 1)] : '...';
+  const line = storyLine || (n.dialog ? n.dialog[Math.min(f, n.dialog.length - 1)] : '...');
   const hearts = '♥'.repeat(f) + '♡'.repeat(5 - f);
   const role = n.role || '';
   const perkDesc = n.perk
@@ -2211,8 +2330,12 @@ function doSleep() {
     gameState.freeCoffeeUsed = false;
     gameState.vitaminsToday = false;
     gameState.attendedEventToday = false;
+    updateContractsForNewDay();
     gameState.day++;
     gameState.hunger = Math.max(gameState.hunger - 10, 20);
+    checkStoryDayStart();
+    checkQuest('first_steps');
+    checkQuest('town_rising');
     if (gameState.hunger < 30) log('You woke up hungry. Find food soon!', 'w');
     log(`Day ${gameState.day} begins \u2014 ${DAYS[(gameState.day - 1) % 7]}. Get to the factory by 9:00 AM!`, 'g');
     changeScene('HOME', 96, 120);
@@ -2235,7 +2358,7 @@ function endShift(complete) {
     p += 5;
     log('Respected worker bonus: +$5', 'g');
   }
-  gameState.money += p;
+  addMoney(p);
   gameState.weeklyPay += p;
   gameState.moneyEarnedToday = (gameState.moneyEarnedToday || 0) + p;
   if (complete) log(`Shift complete. Earned $${p}  (tasks: ${done}/3, crafts: ${gameState.craftedToday}).`, 'g');
@@ -2250,6 +2373,13 @@ function pay(amt) {
   if (gameState.money < amt) { log(`Need $${amt} — you only have $${gameState.money}.`, 'b'); return false; }
   gameState.money -= amt;
   return true;
+}
+
+function addMoney(amt) {
+  if (amt <= 0) return;
+  gameState.money += amt;
+  gameState.totalEarned = (gameState.totalEarned || 0) + amt;
+  checkQuest('final_push');
 }
 
 function cap(v, mx = 100) { return Math.min(mx, Math.max(0, v)); }
@@ -2282,6 +2412,170 @@ function applyFriendshipGain(npc, amount, reason = 'friendship') {
     if (delta > 0) log(`${target.name} heard about your ${reason} with ${npc.name}. +${delta} friendship.`, 'g');
   });
 }
+function getStoryDaysLeft() {
+  if (gameState.storyChapter < 1) return gameState.storyDayLimit || 0;
+  return Math.max(0, (gameState.storyDayLimit || 0) - (gameState.day - (gameState.storyStartDay || gameState.day)));
+}
+
+function unlockQuest(id, autoComplete = false) {
+  const q = (gameState.quests || []).find(qq => qq.id === id);
+  if (!q || q.status === 'complete') return;
+  if (q.status === 'locked') q.status = 'available';
+  if (autoComplete) checkQuest(id);
+}
+
+function storyModal(title, desc, buttons, cb) {
+  modal(title, desc, buttons, cb, { story: true });
+}
+
+function triggerStoryProgress() {
+  if (gameState.storyChapter < 1) return;
+  if (gameState.storyChapter < 2 && gameState.factoryLv >= 2) {
+    gameState.storyChapter = 2;
+    unlockQuest('momentum');
+    storyModal('PROGRESS REPORT', "The Council got word of our upgrade. They're watching closely now.\nKeep pushing — we need to hit Level 5 before time runs out.\nThe town is counting on us.", ['On it'], () => {});
+    return;
+  }
+  if (gameState.storyChapter < 3 && gameState.townLv >= 3) {
+    gameState.storyChapter = 3;
+    unlockQuest('town_rising');
+    storyModal('FROM THE MAYOR', "The factory's growth has inspired the whole town.\nNew residents are arriving. New buildings are opening.\nFinish what you started — we're almost there.", ['Keep going'], () => {});
+    return;
+  }
+  if (gameState.storyChapter < 4 && gameState.factoryLv >= 4) {
+    gameState.storyChapter = 4;
+    unlockQuest('final_push');
+    storyModal('THE FINAL PUSH', "One more upgrade and we hit Full Production.\nThe Council deadline is close. Don't stop now —\nthe whole town is behind you.", ["Let's finish this"], () => {});
+    return;
+  }
+  if (gameState.storyChapter < 5 && gameState.factoryLv >= 5) {
+    gameState.storyChapter = 5;
+    unlockQuest('legend');
+    checkQuest('legend');
+    log('VICTORY: Factory saved! The town lives on.', 'w');
+    storyModal('FACTORY SAVED!', "Full Production achieved. The Town Council has lifted the closure notice.\nThe factory is thriving. The town is growing. And it's all because of you.\n\nMr. Vance: 'I knew I could count on you.'\n\nRita: 'This town has a future now!'\n\nOtto: 'Best crew I ever worked with.'", ['The story continues...'], () => {});
+  }
+}
+
+function checkStoryDayStart() {
+  if (gameState.day >= 2 && gameState.storyChapter === 0) {
+    gameState.storyStartDay = gameState.day;
+    gameState.storyDayLimit = 30;
+    storyModal('URGENT MESSAGE', "The Town Council has given us 30 days to reach Full Production.\nIf we fail, the factory closes and the town falls apart.\nI need your best work. Don't let me down.", ['Understood'], () => {
+      gameState.storyChapter = 1;
+      unlockQuest('first_steps');
+      log("Story: The factory's future is on the line!", 'w');
+      triggerStoryProgress();
+    });
+    return;
+  }
+  if (gameState.storyChapter >= 1) unlockQuest('first_steps');
+  if (gameState.storyChapter >= 1 && gameState.storyChapter < 5 && getStoryDaysLeft() <= 0) {
+    storyModal('TIME\'S UP', "The factory failed to reach Full Production in time.\nThe Town Council has issued a closure warning.\n\nBut the town isn't giving up yet — you have 10 more days.", ['Keep fighting'], () => {
+      gameState.storyDayLimit += 10;
+    });
+    return;
+  }
+  triggerStoryProgress();
+}
+
+function getStoryDialogue(npc) {
+  if (!npc || gameState.storyChapter < 1 || gameState.storyChapter >= 5) return '';
+  if (npc.id === 'boss' && (npc.friendship || 0) === 0) return `We have ${getStoryDaysLeft()} days left. Get to work.`;
+  if (npc.id === 'rita' && gameState.storyChapter >= 2 && !gameState.storyFlags.ritaChapter2) {
+    gameState.storyFlags.ritaChapter2 = true;
+    return 'I heard the factory is growing! This town needed good news.';
+  }
+  if (npc.id === 'chef' && gameState.storyChapter >= 3 && !gameState.storyFlags.chefChapter3) {
+    gameState.storyFlags.chefChapter3 = true;
+    return 'More customers every day! Your factory is saving this town.';
+  }
+  if (npc.id === 'otto' && gameState.storyChapter >= 4 && !gameState.storyFlags.ottoChapter4) {
+    gameState.storyFlags.ottoChapter4 = true;
+    return "Almost there. I'll pull extra shifts if you need me.";
+  }
+  return '';
+}
+
+function refreshAvailableContracts(force = false) {
+  if (gameState.day < (gameState.contractRefreshDay || 1) && !force) return;
+  const pool = CONTRACT_TEMPLATES.filter(c => c.minFactoryLv <= gameState.factoryLv);
+  const shuffled = pool.sort(() => Math.random() - 0.5).slice(0, 2);
+  gameState.availableContracts = shuffled.map(t => ({ ...t, id: `offer_${Date.now()}_${Math.random().toString(16).slice(2, 7)}` }));
+  gameState.contractRefreshDay = gameState.day + 3;
+}
+
+function acceptContract(offerIdx) {
+  const activeCount = (gameState.contracts || []).filter(c => c.status === 'active').length;
+  if (activeCount >= 2) { log('You can only manage 2 contracts at once.', 'w'); return; }
+  const offer = gameState.availableContracts[offerIdx];
+  if (!offer) return;
+  gameState.contracts.push({
+    id: `contract_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`,
+    title: offer.title,
+    description: `${offer.title}: Deliver ${offer.qty} ${offer.item}(s).`,
+    item: offer.item,
+    qty: offer.qty,
+    delivered: 0,
+    reward: offer.reward,
+    daysLeft: offer.days,
+    status: 'active',
+  });
+  gameState.availableContracts.splice(offerIdx, 1);
+  log(`Contract accepted: ${offer.title}.`, 'g');
+}
+
+function doContractBoard() {
+  refreshAvailableContracts();
+  const active = (gameState.contracts || []).filter(c => c.status === 'active');
+  const lines = ['Active Contracts:'];
+  if (!active.length) lines.push('None');
+  active.forEach(c => lines.push(`${c.title}: ${c.delivered}/${c.qty} — ${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`));
+  lines.push('', 'Available Orders:');
+  if (!gameState.availableContracts.length) lines.push('No new offers yet.');
+  const opts = gameState.availableContracts.map(c => `Accept: ${c.title} (${c.qty} ${c.item})  $${c.reward}  ${c.days}d`);
+  opts.push('Close');
+  modal('CONTRACT BOARD', lines.join('\n'), opts, i => {
+    if (i >= gameState.availableContracts.length) return;
+    acceptContract(i);
+    doContractBoard();
+  });
+}
+
+function deliverCraftToContracts(itemId) {
+  const active = (gameState.contracts || []).filter(c => c.status === 'active' && c.item === itemId && c.delivered < c.qty);
+  if (!active.length) return;
+  const c = active[0];
+  c.delivered++;
+  if (c.delivered >= c.qty) {
+    c.status = 'complete';
+    addMoney(c.reward);
+    gameState.contractsCompleted = (gameState.contractsCompleted || 0) + 1;
+    gameState.contractStreak = (gameState.contractStreak || 0) + 1;
+    if (c.daysLeft === 1) gameState.clutchContract = true;
+    log(`CONTRACT COMPLETE: ${c.title} — +$${c.reward}!`, 'w');
+    checkQuest('first_contract');
+    checkQuest('contract_worker');
+    checkQuest('under_pressure');
+    checkQuest('on_schedule');
+  }
+}
+
+function updateContractsForNewDay() {
+  (gameState.contracts || []).forEach(c => {
+    if (c.status !== 'active') return;
+    c.daysLeft--;
+    if (c.daysLeft <= 0 && c.delivered < c.qty) {
+      c.status = 'failed';
+      gameState.rep = Math.max(0, gameState.rep - 0.2);
+      gameState.contractStreak = 0;
+      log(`CONTRACT FAILED: ${c.title}. No payment.`, 'b');
+      checkQuest('on_schedule');
+    }
+  });
+  refreshAvailableContracts();
+}
+
 function changeScene(sc, px, py) { gameState.scene = sc; player.x = px; player.y = py; }
 
 // ── PASSIVE ────────────────────────────────────────────────────────────
@@ -2396,12 +2690,30 @@ function updateHUD() {
   const sw = document.getElementById('sb-warn');
   sw.textContent = w.join('   ');
   sw.className = w.length ? 'sb-warn' : '';
+  const sbStory = document.getElementById('sb-story');
+  sbStory.className = '';
+  if (gameState.storyChapter >= 1 && gameState.storyChapter < 5) {
+    const daysLeft = getStoryDaysLeft();
+    sbStory.textContent = `📅 ${daysLeft} days left`;
+    if (daysLeft <= 5) sbStory.className = 'sb-story-warn';
+    else if (daysLeft <= 10) sbStory.className = 'sb-story-soon';
+  } else if (gameState.storyChapter === 5) {
+    sbStory.textContent = '🏆 Factory Saved!';
+    sbStory.className = 'sb-story-win';
+  } else {
+    sbStory.textContent = '';
+  }
 }
 
 // ── MODAL ─────────────────────────────────────────────────────────────────
-function modal(title, desc, choices, cb) {
+function modal(title, desc, choices, cb, opts = {}) {
   document.getElementById('mt').textContent = title;
   document.getElementById('md').textContent = desc;
+  const box = document.getElementById('mbox');
+  const mt = document.getElementById('mt');
+  box.style.borderColor = opts.story ? '#ffd700' : '#00ffcc';
+  mt.style.color = opts.story ? '#ffd700' : '#00ffcc';
+  mt.style.textShadow = opts.story ? '0 0 8px #ffd70088' : '0 0 8px #00ffcc88';
   const ch = document.getElementById('mc');
   ch.innerHTML = '';
   choices.forEach((c, i) => {
@@ -2481,6 +2793,7 @@ function applyLoad(raw) {
     Object.assign(gameState, data.gameState);
     if (!gameState.quests) gameState.quests = [];
     if (gameState.totalCrafted === undefined) gameState.totalCrafted = 0;
+    if (gameState.totalEarned === undefined) gameState.totalEarned = 0;
     if (gameState.rentDebt === undefined) gameState.rentDebt = 0;
     if (gameState.moneyEarnedToday === undefined) gameState.moneyEarnedToday = 0;
     if (gameState.materialsBought === undefined) gameState.materialsBought = 0;
@@ -2506,6 +2819,16 @@ function applyLoad(raw) {
     if (gameState.freeCoffeeUsed === undefined) gameState.freeCoffeeUsed = false;
     if (gameState.vitaminsToday === undefined) gameState.vitaminsToday = false;
     if (gameState.attendedEventToday === undefined) gameState.attendedEventToday = false;
+    if (gameState.storyChapter === undefined) gameState.storyChapter = 0;
+    if (!gameState.storyFlags) gameState.storyFlags = {};
+    if (gameState.storyDayLimit === undefined) gameState.storyDayLimit = 30;
+    if (gameState.storyStartDay === undefined) gameState.storyStartDay = 0;
+    if (!Array.isArray(gameState.contracts)) gameState.contracts = [];
+    if (!Array.isArray(gameState.availableContracts)) gameState.availableContracts = [];
+    if (gameState.contractRefreshDay === undefined) gameState.contractRefreshDay = gameState.day;
+    if (gameState.contractsCompleted === undefined) gameState.contractsCompleted = 0;
+    if (gameState.contractStreak === undefined) gameState.contractStreak = 0;
+    if (gameState.clutchContract === undefined) gameState.clutchContract = false;
     if (inv.coffee_item === undefined) inv.coffee_item = 0;
     // Inject any new quests missing from old saves
     const newQuests = [
@@ -2519,6 +2842,15 @@ function applyLoad(raw) {
       { id: 'delegator', title: 'Delegator', description: 'Have Otto complete 3 tasks for you total.', type: 'side', status: 'available', goal: { type: 'otto_tasks', target: 3 }, reward: { money: 25, xp: 20, rep: 0.3 }, progress: 0 },
       { id: 'master_crafter', title: 'Master Crafter', description: 'Craft 20 items total.', type: 'progression', status: 'available', goal: { type: 'total_crafted', target: 20 }, reward: { money: 60, xp: 40, rep: 0.5 }, progress: 0 },
       { id: 'full_factory', title: 'Full Factory', description: 'Upgrade the factory to maximum level (Lv 5).', type: 'progression', status: 'available', goal: { type: 'factory_level', target: 5 }, reward: { money: 150, xp: 100, rep: 1 }, progress: 0 },
+      { id: 'first_steps', title: 'First Steps', description: 'Complete your first full week at the factory (7 days).', type: 'progression', status: 'locked', goal: { type: 'day_reached', target: 8 }, reward: { money: 45, xp: 30, rep: 0.5 }, progress: 0 },
+      { id: 'momentum', title: 'Momentum', description: 'Craft 10 items and upgrade the factory to Level 3.', type: 'progression', status: 'locked', goal: { type: 'momentum', target: 1 }, reward: { money: 60, xp: 40, rep: 0.5 }, progress: 0 },
+      { id: 'town_rising', title: 'Town Rising', description: 'Grow the town to Small Town and befriend 3 NPCs.', type: 'progression', status: 'locked', goal: { type: 'town_rising', target: 1 }, reward: { money: 75, xp: 50, rep: 1 }, progress: 0 },
+      { id: 'final_push', title: 'Final Push', description: 'Reach Factory Level 4 and earn $500 total.', type: 'progression', status: 'locked', goal: { type: 'final_push', target: 1 }, reward: { money: 80, xp: 60, rep: 0.5 }, progress: 0 },
+      { id: 'legend', title: 'Legend', description: 'You saved the factory and the town. A true legend.', type: 'progression', status: 'locked', goal: { type: 'factory_level', target: 5 }, reward: { money: 200, xp: 100, rep: 2 }, progress: 0 },
+      { id: 'first_contract', title: 'First Contract', description: 'Accept and complete your first contract.', type: 'side', status: 'available', goal: { type: 'contracts_completed', target: 1 }, reward: { money: 30, xp: 20, rep: 0.3 }, progress: 0 },
+      { id: 'contract_worker', title: 'Contract Worker', description: 'Complete 5 contracts total.', type: 'side', status: 'available', goal: { type: 'contracts_completed', target: 5 }, reward: { money: 75, xp: 40, rep: 0.5 }, progress: 0 },
+      { id: 'under_pressure', title: 'Under Pressure', description: 'Complete a contract with only 1 day remaining.', type: 'side', status: 'available', goal: { type: 'clutch_contract_done', target: 1 }, reward: { money: 40, xp: 25, rep: 0.4 }, progress: 0 },
+      { id: 'on_schedule', title: 'On Schedule', description: 'Complete 3 contracts without letting any fail.', type: 'progression', status: 'available', goal: { type: 'contract_streak', target: 3 }, reward: { money: 60, xp: 35, rep: 0.5 }, progress: 0 },
     ];
     newQuests.forEach(nq => { if (!gameState.quests.find(q => q.id === nq.id)) gameState.quests.push(nq); });
     // Update NPC profiles for saves that predate expanded NPC data
@@ -2557,6 +2889,9 @@ function applyLoad(raw) {
     refreshDailyTaskUI();
     changeScene(gameState.scene, px, py);
     applyTownBuildings();
+    refreshAvailableContracts(true);
+    triggerStoryProgress();
+    checkStoryDayStart();
     updateHUD();
     log('Game loaded.', 'g');
     return true;
@@ -2577,7 +2912,7 @@ window.promptLoadGame = () => {
 // ── QUESTS ────────────────────────────────────────────────────────────────
 function checkQuest(questId) {
   const q = (gameState.quests || []).find(q => q.id === questId);
-  if (!q || q.status === 'complete') return;
+  if (!q || q.status === 'complete' || q.status === 'locked') return;
   let progress = 0;
   if (q.goal.type === 'tasks_completed') progress = gameState.tasks.filter(t => t).length;
   else if (q.goal.type === 'friends') progress = gameState.npcs.filter(n => (n.friendship || 0) >= 1).length;
@@ -2594,17 +2929,24 @@ function checkQuest(questId) {
     const vq = gameState.npcs.find(n => n.id === 'boss');
     const oq = gameState.npcs.find(n => n.id === 'otto');
     progress = (vq && (vq.friendship || 0) >= 2 && oq && (oq.friendship || 0) >= 2) ? 1 : 0;
-  }
+  } else if (q.goal.type === 'day_reached') progress = gameState.day;
+  else if (q.goal.type === 'momentum') progress = (gameState.totalCrafted >= 10 && gameState.factoryLv >= 3) ? 1 : 0;
+  else if (q.goal.type === 'town_rising') progress = (gameState.townLv >= 3 && gameState.npcs.filter(n => (n.friendship || 0) >= 1).length >= 3) ? 1 : 0;
+  else if (q.goal.type === 'final_push') progress = (gameState.factoryLv >= 4 && (gameState.totalEarned || 0) >= 500) ? 1 : 0;
+  else if (q.goal.type === 'contracts_completed') progress = gameState.contractsCompleted || 0;
+  else if (q.goal.type === 'clutch_contract_done' || q.goal.type === 'clutch_contract') progress = gameState.clutchContract ? 1 : 0;
+  else if (q.goal.type === 'contract_streak') progress = gameState.contractStreak || 0;
   q.progress = progress;
   if (progress >= q.goal.target) completeQuest(q);
 }
 
 function completeQuest(q) {
   q.status = 'complete';
-  gameState.money += q.reward.money;
+  addMoney(q.reward.money);
   gameState.factoryXP += q.reward.xp;
   gameState.rep = Math.min(5, gameState.rep + q.reward.rep);
   log(`QUEST COMPLETE: ${q.title} — Reward: $${q.reward.money}`, 'w');
+  triggerStoryProgress();
 }
 
 window.showQuests = () => {
