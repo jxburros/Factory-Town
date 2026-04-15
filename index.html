@@ -1820,7 +1820,15 @@ function draw() {
 
 function drawTiles() {
   const map = TILE_MAPS[gameState.scene];
-  for (let r = 0; r < 15; r++) for (let c = 0; c < 20; c++) ctx.drawImage(getTile(map[r][c]), c * TILE_SIZE, r * TILE_SIZE);
+  const mapRows = map.length;
+  const mapCols = map[0].length;
+  for (let y = 0; y < CANVAS_H; y += TILE_SIZE) {
+    const mapRow = Math.floor(y / TILE_SIZE) % mapRows;
+    for (let x = 0; x < CANVAS_W; x += TILE_SIZE) {
+      const mapCol = Math.floor(x / TILE_SIZE) % mapCols;
+      ctx.drawImage(getTile(map[mapRow][mapCol]), x, y);
+    }
+  }
 }
 
 function drawSceneDecor() {
