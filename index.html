@@ -1652,6 +1652,7 @@ function handleDailyTaskCompletion() {
 }
 
 function completeTaskByIndex(idx, source = 'player') {
+  if (!Number.isInteger(idx) || idx < 0 || idx > 2) return false;
   if (gameState.tasks[idx]) return false;
   const task = getDailyTaskByIndex(idx);
   let energyCost = gameState.improvedTools ? Math.floor(task.energy * BALANCE.crafting.improvedToolsTaskMult) : task.energy;
@@ -2905,12 +2906,14 @@ function checkFactoryLv() {
 }
 
 function pay(amt) {
+  if (!Number.isFinite(amt) || amt <= 0) { log('Invalid payment amount.', 'b'); return false; }
   if (gameState.money < amt) { log(`Need $${amt} — you only have $${gameState.money}.`, 'b'); return false; }
   gameState.money -= amt;
   return true;
 }
 
 function addMoney(amt) {
+  if (!Number.isFinite(amt)) return;
   if (amt <= 0) return;
   gameState.money += amt;
   gameState.totalEarned = (gameState.totalEarned || 0) + amt;
@@ -2918,6 +2921,62 @@ function addMoney(amt) {
 }
 
 function cap(v, mx = 100) { return Math.min(mx, Math.max(0, v)); }
+function clampNumber(v, min, max, fallback = min) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+function clampInt(v, min, max, fallback = min) {
+  return Math.floor(clampNumber(v, min, max, fallback));
+}
+function bool3(arr, fallback = [false, false, false]) {
+  if (!Array.isArray(arr) || arr.length !== 3) return fallback.slice();
+  return [!!arr[0], !!arr[1], !!arr[2]];
+}
+function sanitizeLoadedGameState() {
+  if (!gameState.inventory || typeof gameState.inventory !== 'object') gameState.inventory = {};
+  const inv = gameState.inventory;
+  const invCountKeys = ['bread', 'coffee_item', 'energy_drink', 'scrapMetal', 'wire', 'circuit', 'blueprint'];
+  invCountKeys.forEach(k => { inv[k] = clampInt(inv[k], 0, 9999, 0); });
+  const invOwnedKeys = ['coffee', 'uniform', 'bike', 'bus_pass', 'toolbelt', 'thermos', 'gloves', 'lunchbox'];
+  invOwnedKeys.forEach(k => { inv[k] = clampInt(inv[k], 0, 1, 0); });
+
+  gameState.money = clampInt(gameState.money, 0, 9999999, BALANCE.progression.startMoney);
+  gameState.hunger = clampNumber(gameState.hunger, 0, 100, 100);
+  gameState.energy = clampNumber(gameState.energy, 0, 100, 100);
+  gameState.time = clampInt(gameState.time, 0, 24 * 60 - 1, 6 * 60);
+  gameState.day = clampInt(gameState.day, 1, 9999, 1);
+  gameState.rep = clampNumber(gameState.rep, 0, 5, 3);
+  gameState.factoryLv = clampInt(gameState.factoryLv, 1, 5, 1);
+  gameState.townLv = clampInt(gameState.townLv, 1, 5, 1);
+  gameState.homeLv = clampInt(gameState.homeLv, 1, 4, 1);
+  gameState.carryLimit = clampInt(gameState.carryLimit, 1, 999, gameState.homeLv >= 4 ? 25 : 15);
+  gameState.fridgeCapacity = clampInt(gameState.fridgeCapacity, 1, 999, gameState.homeLv >= 2 ? 5 : 3);
+  gameState.wage = clampInt(gameState.wage, 0, 100000, BALANCE.progression.baseWage);
+  gameState.tasks = bool3(gameState.tasks);
+  gameState.assignedTasks = {
+    0: gameState.assignedTasks && gameState.assignedTasks[0] === 'otto' ? 'otto' : null,
+    1: gameState.assignedTasks && gameState.assignedTasks[1] === 'otto' ? 'otto' : null,
+    2: gameState.assignedTasks && gameState.assignedTasks[2] === 'otto' ? 'otto' : null,
+  };
+  if (!Array.isArray(gameState.dailyTasks) || gameState.dailyTasks.length !== 3) gameState.dailyTasks = ['sweep', 'boiler', 'log_parts'];
+  gameState.scene = SCENE_OBJECTS[gameState.scene] ? gameState.scene : 'HOME';
+  if (!['walk', 'bike', 'bus'].includes(gameState.travelMethod)) gameState.travelMethod = 'walk';
+
+  const contractStatus = new Set(['active', 'complete', 'failed']);
+  const safeContracts = Array.isArray(gameState.contracts) ? gameState.contracts : [];
+  gameState.contracts = safeContracts.map(c => {
+    const qty = clampInt(c?.qty, 1, 9999, 1);
+    return {
+      ...c,
+      qty,
+      delivered: clampInt(c?.delivered, 0, qty, 0),
+      reward: clampInt(c?.reward, 1, 9999999, 1),
+      daysLeft: clampInt(c?.daysLeft, 1, 9999, 1),
+      status: contractStatus.has(c?.status) ? c.status : 'active',
+    };
+  });
+}
 function repStr(r) { return '★'.repeat(Math.round(r)) + '☆'.repeat(5 - Math.round(r)); }
 function getRepTier(r = gameState.rep) {
   return REPUTATION_TIERS.find(t => r >= t.min && r <= t.max) || REPUTATION_TIERS[0];
@@ -3432,7 +3491,9 @@ function saveGame() {
 function applyLoad(raw) {
   try {
     const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object' || !data.gameState || typeof data.gameState !== 'object') throw new Error('invalid_save');
     Object.assign(gameState, data.gameState);
+    sanitizeLoadedGameState();
     setupSharedState(gameState);
     bindSystemEvents();
     if (!gameState.quests) gameState.quests = [];
@@ -3555,9 +3616,9 @@ function applyLoad(raw) {
       const prof = npcProfiles[base.id];
       gameState.npcs.push({ ...base, role: prof.role, schedule: prof.schedule, gift: prof.gift, perk: prof.perk, dialog: prof.dialog, minTownLv: prof.minTownLv });
     });
-    const px = data.playerPos ? data.playerPos.x : player.x;
-    const py = data.playerPos ? data.playerPos.y : player.y;
-    if (data.playerPos) player.facing = data.playerPos.facing || 2;
+    const px = clampInt(data.playerPos?.x, 0, CANVAS_W - TILE_SIZE, player.x);
+    const py = clampInt(data.playerPos?.y, 0, CANVAS_H - TILE_SIZE, player.y);
+    if (data.playerPos) player.facing = clampInt(data.playerPos.facing, 0, 3, 2);
     refreshDailyTaskUI();
     changeScene(gameState.scene, px, py);
     applyTownBuildings();
