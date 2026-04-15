@@ -465,7 +465,7 @@ const PALETTE = {
 
 // ── TOWN LEVEL DEFINITIONS ───────────────────────────────────────────
 const TOWN_LEVELS = [
-  { lv: 1, name: 'Hamlet',     unlocks: null,               flavor: 'A quiet hamlet — home, diner, shop and park.' },
+  { lv: 1, name: 'Hamlet',     unlocks: null,               flavor: 'A quiet hamlet — home, diner, shop and town hall.' },
   { lv: 2, name: 'Village',    unlocks: 'Library',          flavor: 'A library opens its doors, bringing knowledge to all.' },
   { lv: 3, name: 'Small Town', unlocks: 'Clinic',           flavor: 'The clinic opens, keeping every resident healthy.' },
   { lv: 4, name: 'Town',       unlocks: 'Market',           flavor: 'A bustling market brings bulk deals and new trade.' },
@@ -1663,13 +1663,14 @@ const SCENE_OBJECTS = {
   STREET: [
     { x: 4, y: 4, w: 48, h: 48, lbl: 'DINER', act: 'diner', spr: 'diner' },
     { x: 92, y: 4, w: 32, h: 48, lbl: 'SHOP', act: 'shop', spr: 'shop' },
-    { x: 148, y: 0, w: 80, h: 64, lbl: 'FACTORY', act: 'enter_factory', spr: 'factory', portal: true },
     { x: 232, y: 0, w: 64, h: 64, lbl: 'TOWN HALL', act: 'town_hall', spr: 'townhall' },
-    { x: 264, y: 128, w: 48, h: 48, lbl: 'HOME', act: 'enter_home', spr: 'house', portal: true },
-    { x: 4, y: 148, w: 72, h: 72, lbl: 'PARK', act: 'park', col: '#1a5c1a' },
   ],
-  STREET_LEFT: [],
-  STREET_RIGHT: [],
+  STREET_LEFT: [
+    { x: 28, y: 168, w: 80, h: 64, lbl: 'FACTORY', act: 'enter_factory', spr: 'factory', portal: true },
+  ],
+  STREET_RIGHT: [
+    { x: 236, y: 24, w: 48, h: 48, lbl: 'HOME', act: 'enter_home', spr: 'house', portal: true },
+  ],
   FACTORY: [
     { x: 16, y: 16, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
     { x: 112, y: 16, w: 48, h: 32, lbl: 'BOILER', act: 'task1', taskIdx: 1, col: '#553322' },
@@ -2321,11 +2322,6 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
     doShop();
   } else if (a === 'town_hall') {
     modal('TOWN HALL', `Factory Level: ${gameState.factoryLv}   Town Level: ${gameState.townLv}\nFactory XP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\nReputation: ${repStr(gameState.rep)}  ${getRepTitle()}\nDisciplines on record: ${gameState.disciplines}`, ['Close'], []);
-  } else if (a === 'park') {
-    modal('PARK', 'Take a break.', ['Rest 30 min  +15 energy', 'Go for a walk  +10 min', 'Leave'], i => {
-      if (i === 0) { addGameMinutes(30, 'park_rest'); gameState.energy = cap(gameState.energy + 15); log('Rested at the park.', 'g'); }
-      else if (i === 1) { addGameMinutes(10, 'park_walk'); log('Nice walk through the park.', 'g'); }
-    });
   } else if (a === 'library') {
     const mayaNpc = getNPCById('maya');
     const mayaBonus = isPerkActive(mayaNpc) ? 15 : 0;
