@@ -11,11 +11,12 @@
 #gw {
   font-family: 'Press Start 2P', monospace;
   background: #0a0a14;
-  color: #ddd;
+  color: #e7ebff;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 6px;
+  padding: 8px;
+  line-height: 1.5;
 }
 
 #hud {
@@ -34,16 +35,16 @@
 }
 
 .hl {
-  color: #8899cc;
-  font-size: 6px;
+  color: #b0bee8;
+  font-size: 7px;
   display: block;
   margin-bottom: 3px;
   letter-spacing: 0.5px;
 }
 
 .hv {
-  font-size: 9px;
-  color: #00ffcc;
+  font-size: 10px;
+  color: #61ffd9;
   display: block;
 }
 
@@ -78,17 +79,17 @@ canvas {
   background: #060610;
   border: 1.5px solid #2a2a4a;
   border-top: none;
-  padding: 6px 9px;
-  font-size: 7px;
-  min-height: 42px;
-  max-height: 58px;
+  padding: 8px 10px;
+  font-size: 8px;
+  min-height: 56px;
+  max-height: 72px;
   overflow-y: auto;
-  color: #aaaadd;
+  color: #c2c8ea;
 }
 
 .ll {
-  line-height: 2.1;
-  font-size: 7px;
+  line-height: 1.9;
+  font-size: 8px;
 }
 
 .lw {
@@ -201,8 +202,8 @@ canvas {
 }
 
 #ctrls {
-  font-size: 6px;
-  color: #5566aa;
+  font-size: 7px;
+  color: #91a0d8;
   text-align: center;
   flex: 1;
   line-height: 2.2;
@@ -214,9 +215,9 @@ canvas {
   background: #060610;
   border: 1.5px solid #2a2a4a;
   border-top: none;
-  padding: 4px 9px;
-  font-size: 6px;
-  color: #7788bb;
+  padding: 6px 10px;
+  font-size: 7px;
+  color: #95a3d6;
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
@@ -231,6 +232,43 @@ canvas {
 .sb-story-warn { color: #ff5555 !important; }
 .sb-story-soon { color: #ffb347 !important; }
 .sb-story-win { color: #ffd700 !important; }
+
+.mb:focus-visible, .db:focus-visible {
+  outline: 2px solid #ffe066;
+  outline-offset: 2px;
+}
+
+#fx {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  pointer-events: none;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toast {
+  background: rgba(8, 12, 26, 0.95);
+  border: 1px solid #3f4a88;
+  color: #dbe4ff;
+  font-size: 7px;
+  line-height: 1.8;
+  padding: 6px 8px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  animation: toastIn 180ms ease-out;
+}
+
+.toast.toast-g { border-color: #45d68f; color: #aef5cd; }
+.toast.toast-w { border-color: #ffcc66; color: #ffe0a2; }
+.toast.toast-b { border-color: #ff6f88; color: #ffc0cb; }
+
+@keyframes toastIn {
+  from { transform: translateY(-3px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 </style>
 <div id="gw">
 <div id="hud">
@@ -245,11 +283,12 @@ canvas {
   <div class="hb"><span class="hl">TOWN</span><span class="hv g" id="htl">Lv 1</span></div>
 </div>
 <div id="cc">
-  <canvas id="gc" width="320" height="240"></canvas>
+  <canvas id="gc" width="320" height="240" aria-label="Factory Town game screen"></canvas>
+  <div id="fx" aria-live="polite" aria-atomic="false"></div>
   <div id="modal"><div id="mbox"><h2 id="mt">TITLE</h2><p id="md">desc</p><div id="mc" class="mc"></div></div></div>
 </div>
-<div id="log"><div class="ll lg">▶ Day 1 — Wake up at home. Reach the factory by 9:00 AM!</div></div>
-<div id="statusbar">
+<div id="log" role="status" aria-live="polite" aria-atomic="false"><div class="ll lg">▶ Day 1 — Wake up at home. Reach the factory by 9:00 AM!</div></div>
+<div id="statusbar" role="status" aria-live="polite">
   <span id="sb-loc">📍 HOME</span>
   <span id="sb-warn"></span>
   <span id="sb-rep">Rep: ★★★☆☆  Respected</span>
@@ -991,6 +1030,7 @@ const gameState = {
   rep: 3,
   factoryLv: 1,
   townLv: 1,
+  factoryUpgradeHintedLv: null,
   wage: BALANCE.progression.baseWage,
   arrivedToday: false,
   dayOver: false,
@@ -1646,7 +1686,7 @@ function handleDailyTaskCompletion() {
       gameState.diversifiedToday = true;
       checkQuest('diversified');
     }
-    log('All 3 tasks done! Head to the Craft Station.', 'g');
+    notifyAction('All 3 tasks done! Head to the Craft Station.', 'g');
     checkQuest('first_day');
   }
 }
@@ -1666,7 +1706,7 @@ function completeTaskByIndex(idx, source = 'player') {
   }
   gameState.tasks[idx] = true;
   gameState.factoryXP += task.xp;
-  log('Task complete: ' + task.label + ' ✓', 'g');
+  notifyAction('Task complete: ' + task.label + ' ✓', 'g');
   gameState.emit('task_completion', { taskIndex: idx, taskId: task.id, source });
   checkFactoryLv();
   return true;
@@ -2454,7 +2494,7 @@ function applyTownBuildings() {
 
 function triggerTownLevelUp(newLv) {
   const info = TOWN_LEVELS[newLv - 1];
-  log(`The town has grown to ${info.name}!`, 'w');
+  notifyAction(`Town level up! ${info.name} unlocked.`, 'w');
   applyTownBuildings();
   triggerStoryProgress();
   const unlockLine = info.unlocks ? `New building unlocked:\n${info.unlocks} added to STREET!` : '';
@@ -2493,7 +2533,7 @@ function doUpgrade() {
         log(`Full Production! Base wage increased to $${gameState.wage}.`, 'g');
       }
       if (gameState.townLv < gameState.factoryLv) gameState.townLv = Math.min(gameState.factoryLv, 5);
-      log(`Factory upgraded to Level ${gameState.factoryLv}! ${next.name} installed.`, 'g');
+      notifyAction(`Factory upgraded to Level ${gameState.factoryLv}! ${next.name} installed.`, 'g');
       checkQuest('upgrade_ready');
       checkQuest('full_factory');
       checkQuest('momentum');
@@ -2531,7 +2571,7 @@ Cost: $${next.cost}`;
       gameState.carryLimit = 25;
       log('Carry limit increased to 25!', 'g');
     }
-    log(`Home upgraded: ${next.name}!`, 'g');
+    notifyAction(`Home upgraded: ${next.name}!`, 'g');
     modal('UPGRADE COMPLETE', `${next.name} installed!`, ['Awesome'], () => {});
     checkQuest('home_sweet_home');
     checkQuest('fully_upgraded');
@@ -2902,7 +2942,14 @@ function endShift(complete) {
 }
 
 function checkFactoryLv() {
-  if (gameState.factoryXP >= gameState.factoryLv * 100 && gameState.factoryLv < 5) log('Factory ready to upgrade! Visit the Upgrade Station.', 'g');
+  if (gameState.factoryXP >= gameState.factoryLv * 100 && gameState.factoryLv < 5) {
+    if (gameState.factoryUpgradeHintedLv !== gameState.factoryLv) {
+      gameState.factoryUpgradeHintedLv = gameState.factoryLv;
+      notifyAction('Factory ready to upgrade! Visit the Upgrade Station.', 'g');
+    }
+  } else if (gameState.factoryUpgradeHintedLv === gameState.factoryLv) {
+    gameState.factoryUpgradeHintedLv = null;
+  }
 }
 
 function pay(amt) {
@@ -3334,59 +3381,88 @@ function formatTime(m) {
 
 function updateHUD() {
   const { time, player, tasks: taskSystem, town } = gameState.systems;
-  document.getElementById('ht').textContent = formatTime(time.time);
-  document.getElementById('hd').textContent = DAYS[(time.day - 1) % 7] + ' ' + time.day;
-  const hs = document.getElementById('hs');
-  hs.textContent = getSeasonName();
-  hs.className = 'hv ' + (getSeasonName() === 'Winter' ? 'w' : getSeasonName() === 'Summer' ? 'd' : 'g');
-  const me = document.getElementById('hm');
-  me.textContent = '$' + player.money;
-  me.className = 'hv ' + (player.money < 10 ? 'd' : player.money < 30 ? 'w' : 'g');
-  const hh = document.getElementById('hh');
-  hh.textContent = Math.round(player.hunger) + '%';
-  hh.className = 'hv ' + (player.hunger < 25 ? 'd' : player.hunger < 50 ? 'w' : '');
-  const he = document.getElementById('he');
-  he.textContent = Math.round(player.energy) + '%';
-  he.className = 'hv ' + (player.energy < 25 ? 'd' : player.energy < 50 ? 'w' : '');
   const done = taskSystem.tasks.filter(t => t).length;
-  const te = document.getElementById('htk');
-  te.textContent = done + '/3';
-  te.className = 'hv ' + (done === 3 ? 'g' : time.arrivedToday && time.time > 9 * 60 ? 'd' : '');
-  document.getElementById('hfl').textContent = 'Lv ' + town.factoryLv;
-  document.getElementById('htl').textContent = 'Lv ' + town.townLv;
-  document.getElementById('sb-loc').textContent = '📍 ' + town.scene;
-  document.getElementById('sb-rep').textContent = `Rep: ${repStr(player.rep)}  ${getRepTitle()}`;
-  document.getElementById('sb-disc').textContent = 'Disciplines: ' + player.disciplines;
-  const w = [];
-  if (player.hunger < 30) w.push('⚠ HUNGRY');
-  if (player.energy < 25) w.push('⚠ TIRED');
-  if (!player.clothed) w.push('⚠ UNCLOTHED');
-  const sw = document.getElementById('sb-warn');
-  sw.textContent = w.join('   ');
-  sw.className = w.length ? 'sb-warn' : '';
-  const sbMarket = document.getElementById('sb-market');
+  const warnItems = [];
+  if (player.hunger < 30) warnItems.push('⚠ HUNGRY');
+  if (player.energy < 25) warnItems.push('⚠ TIRED');
+  if (!player.clothed) warnItems.push('⚠ UNCLOTHED');
+
+  const seasonName = getSeasonName();
+  const seasonClass = 'hv ' + (seasonName === 'Winter' ? 'w' : seasonName === 'Summer' ? 'd' : 'g');
+  const moneyClass = 'hv ' + (player.money < 10 ? 'd' : player.money < 30 ? 'w' : 'g');
+  const hungerClass = 'hv ' + (player.hunger < 25 ? 'd' : player.hunger < 50 ? 'w' : '');
+  const energyClass = 'hv ' + (player.energy < 25 ? 'd' : player.energy < 50 ? 'w' : '');
+  const taskClass = 'hv ' + (done === 3 ? 'g' : time.arrivedToday && time.time > 9 * 60 ? 'd' : '');
+
+  let marketText = 'Market: Stable';
+  let marketClass = '';
   if (gameState.marketEvent) {
     const ev = gameState.marketEvent;
     const daysLeft = Math.max(0, ev.expiresDay - gameState.day + 1);
-    sbMarket.textContent = `${ev.shortLabel} (${daysLeft}d)`;
-    sbMarket.className = ev.type === 'price_war' ? 'sb-warn' : 'sb-story-win';
-  } else {
-    sbMarket.textContent = 'Market: Stable';
-    sbMarket.className = '';
+    marketText = `${ev.shortLabel} (${daysLeft}d)`;
+    marketClass = ev.type === 'price_war' ? 'sb-warn' : 'sb-story-win';
   }
-  const sbStory = document.getElementById('sb-story');
-  sbStory.className = '';
+
+  let storyText = '';
+  let storyClass = '';
   if (gameState.storyChapter >= 1 && gameState.storyChapter < 5) {
     const daysLeft = getStoryDaysLeft();
-    sbStory.textContent = `📅 ${daysLeft} days left`;
-    if (daysLeft <= 5) sbStory.className = 'sb-story-warn';
-    else if (daysLeft <= 10) sbStory.className = 'sb-story-soon';
+    storyText = `📅 ${daysLeft} days left`;
+    if (daysLeft <= 5) storyClass = 'sb-story-warn';
+    else if (daysLeft <= 10) storyClass = 'sb-story-soon';
   } else if (gameState.storyChapter === 5) {
-    sbStory.textContent = '🏆 Factory Saved!';
-    sbStory.className = 'sb-story-win';
-  } else {
-    sbStory.textContent = '';
+    storyText = '🏆 Factory Saved!';
+    storyClass = 'sb-story-win';
   }
+
+  const next = {
+    ht: formatTime(time.time),
+    hd: DAYS[(time.day - 1) % 7] + ' ' + time.day,
+    hs: seasonName, hsCls: seasonClass,
+    hm: '$' + player.money, hmCls: moneyClass,
+    hh: Math.round(player.hunger) + '%', hhCls: hungerClass,
+    he: Math.round(player.energy) + '%', heCls: energyClass,
+    htk: done + '/3', htkCls: taskClass,
+    hfl: 'Lv ' + town.factoryLv,
+    htl: 'Lv ' + town.townLv,
+    sbLoc: '📍 ' + town.scene,
+    sbRep: `Rep: ${repStr(player.rep)}  ${getRepTitle()}`,
+    sbDisc: 'Disciplines: ' + player.disciplines,
+    sbWarn: warnItems.join('   '),
+    sbWarnCls: warnItems.length ? 'sb-warn' : '',
+    sbMarket: marketText,
+    sbMarketCls: marketClass,
+    sbStory: storyText,
+    sbStoryCls: storyClass,
+  };
+
+  const serial = JSON.stringify(next);
+  if (serial === hudSnapshot) return;
+  hudSnapshot = serial;
+
+  hudEls.ht.textContent = next.ht;
+  hudEls.hd.textContent = next.hd;
+  hudEls.hs.textContent = next.hs;
+  hudEls.hs.className = next.hsCls;
+  hudEls.hm.textContent = next.hm;
+  hudEls.hm.className = next.hmCls;
+  hudEls.hh.textContent = next.hh;
+  hudEls.hh.className = next.hhCls;
+  hudEls.he.textContent = next.he;
+  hudEls.he.className = next.heCls;
+  hudEls.htk.textContent = next.htk;
+  hudEls.htk.className = next.htkCls;
+  hudEls.hfl.textContent = next.hfl;
+  hudEls.htl.textContent = next.htl;
+  hudEls.sbLoc.textContent = next.sbLoc;
+  hudEls.sbRep.textContent = next.sbRep;
+  hudEls.sbDisc.textContent = next.sbDisc;
+  hudEls.sbWarn.textContent = next.sbWarn;
+  hudEls.sbWarn.className = next.sbWarnCls;
+  hudEls.sbMarket.textContent = next.sbMarket;
+  hudEls.sbMarket.className = next.sbMarketCls;
+  hudEls.sbStory.textContent = next.sbStory;
+  hudEls.sbStory.className = next.sbStoryCls;
 }
 
 // ── MODAL ─────────────────────────────────────────────────────────────────
@@ -3420,6 +3496,41 @@ function closeModal() {
 
 // ── LOG ───────────────────────────────────────────────────────────────────
 const logEl = document.getElementById('log');
+const fxEl = document.getElementById('fx');
+let hudSnapshot = '';
+const hudEls = {
+  ht: document.getElementById('ht'),
+  hd: document.getElementById('hd'),
+  hs: document.getElementById('hs'),
+  hm: document.getElementById('hm'),
+  hh: document.getElementById('hh'),
+  he: document.getElementById('he'),
+  htk: document.getElementById('htk'),
+  hfl: document.getElementById('hfl'),
+  htl: document.getElementById('htl'),
+  sbLoc: document.getElementById('sb-loc'),
+  sbRep: document.getElementById('sb-rep'),
+  sbDisc: document.getElementById('sb-disc'),
+  sbWarn: document.getElementById('sb-warn'),
+  sbMarket: document.getElementById('sb-market'),
+  sbStory: document.getElementById('sb-story'),
+};
+
+function showToast(msg, tone = 'g') {
+  if (!fxEl || !msg) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${tone || 'g'}`;
+  toast.textContent = msg;
+  fxEl.appendChild(toast);
+  while (fxEl.children.length > 3) fxEl.removeChild(fxEl.children[0]);
+  setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2600);
+}
+
+function notifyAction(msg, tone = 'g') {
+  log(msg, tone);
+  showToast(msg, tone);
+}
+
 function log(msg, t = '') {
   const d = document.createElement('div');
   d.className = 'll l' + t;
@@ -3547,6 +3658,7 @@ function applyLoad(raw) {
     if (gameState.contractStreak === undefined) gameState.contractStreak = 0;
     if (gameState.clutchContract === undefined) gameState.clutchContract = false;
     if (gameState.homeLv === undefined) gameState.homeLv = 1;
+    if (gameState.factoryUpgradeHintedLv === undefined) gameState.factoryUpgradeHintedLv = null;
     if (gameState.carryLimit === undefined) gameState.carryLimit = gameState.homeLv >= 4 ? 25 : 15;
     if (gameState.fridgeCapacity === undefined) gameState.fridgeCapacity = gameState.homeLv >= 2 ? 5 : 3;
     if (!gameState.homeStorage) gameState.homeStorage = { scrapMetal: 0, wire: 0, circuit: 0 };
@@ -3682,7 +3794,7 @@ function completeQuest(q) {
   addMoney(q.reward.money);
   gameState.factoryXP += q.reward.xp;
   gameState.rep = Math.min(5, gameState.rep + q.reward.rep);
-  log(`QUEST COMPLETE: ${q.title} — Reward: $${q.reward.money}`, 'w');
+  notifyAction(`QUEST COMPLETE: ${q.title} — Reward: $${q.reward.money}`, 'w');
   triggerStoryProgress();
 }
 
