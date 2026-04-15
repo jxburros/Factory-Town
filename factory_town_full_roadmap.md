@@ -2,6 +2,19 @@
 
 This document outlines the complete development roadmap for the Factory Town game, moving from concept through public release. It includes full explanations of systems, goals, and expectations at each stage.
 
+## Progress Status (Updated)
+
+The current codebase is already beyond pure concept/prototype. Based on implemented systems in `index.html`, status is:
+
+- ✅ Stage 0 (Foundation): complete
+- ✅ Stage 1 (Prototype): complete
+- ✅ Stage 2 (MVP): functionally complete
+- 🟡 Stage 3 (Alpha): in progress
+- ⬜ Stage 4 (Beta): not started
+- ⬜ Stage 5 (Public Release): not started
+
+---
+
 ---
 
 # Stage 0: Foundation / Pre-Production
@@ -125,6 +138,9 @@ Prove the core gameplay loop is fun.
 - Relationships affect outcomes
 - Visible progression exists
 
+## Implementation Status
+✅ Achieved in current build (playable daily cycle, relationships, progression, travel, and work loop are present).
+
 ---
 
 # Stage 2: MVP
@@ -170,6 +186,17 @@ Player can:
 - Improve their life and town
 - Feel progression consistently
 
+## Implementation Status
+✅ Largely achieved in current build.
+
+Implemented additions include:
+- Factory and town leveling
+- Quest progression + quest checks
+- Contract board and contract tracking
+- Seasonal cycle with season-specific content
+- Save/load support
+- Expanded inventory, equipment, and materials
+
 ---
 
 # Stage 3: Alpha
@@ -212,6 +239,21 @@ Expand depth and variety.
 - Systems interact meaningfully
 - Multiple progression paths exist
 
+## Implementation Status
+🟡 In progress.
+
+Already implemented toward Alpha:
+- Dating + friendship tiers and NPC perks
+- Competitor/market event pressure on economy
+- Broader itemization and seasonal crafting variants
+- Story chapter flags and richer objective chains
+
+Remaining Alpha priorities:
+- Add additional factory floor variety and task permutations
+- Deepen evening/home interactions (more choices and consequences)
+- Expand narrative event cadence between progression milestones
+- Increase contract variety and edge-case balancing
+
 ---
 
 # Stage 4: Beta
@@ -238,6 +280,9 @@ Balance and polish the game.
 - Stable and reliable
 - No major exploits
 
+## Planned Entry Criteria
+Begin Beta once Alpha content targets above are complete and long-session balance data is collected.
+
 ---
 
 # Stage 5: Public Release
@@ -258,6 +303,12 @@ Player understands:
 - How systems connect
 - How to progress
 - Why their actions matter
+
+## Planned Packaging Work
+- Final onboarding/tutorial text pass
+- Accessibility and legibility audit for small text UI
+- Performance verification on lower-end mobile browsers
+- Final save compatibility checks
 
 ---
 
