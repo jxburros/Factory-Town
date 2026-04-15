@@ -247,7 +247,7 @@ canvas {
 <div id="statusbar">
   <span id="sb-loc">📍 HOME</span>
   <span id="sb-warn"></span>
-  <span id="sb-rep">Rep: ★★★☆☆</span>
+  <span id="sb-rep">Rep: ★★★☆☆  Respected</span>
   <span id="sb-disc">Disciplines: 0</span>
 </div>
 <div id="dpad">
@@ -779,6 +779,9 @@ makeNPC('npc_boss', '#883300', '#222222', '#333333');
 makeNPC('npc_rita', '#cc4488', '#552211', '#664466');
 makeNPC('npc_chef', '#ffffff', '#ffddaa', '#555555');
 makeNPC('npc_otto', '#446688', '#333333', '#445566');
+makeNPC('npc_maya', '#4466aa', '#332211', '#223344');
+makeNPC('npc_doc', '#ffffff', '#111111', '#334455');
+makeNPC('npc_sam', '#aa6622', '#553311', '#443322');
 
 function makePlayer(key, frame, facing, clothed, uniform) {
   makeSpr(key, 8, 16, ox => {
@@ -847,6 +850,25 @@ const FACTORY_UPGRADES = [
   { level: 4, name: 'Automation Line', cost: 280, description: 'Unlocks Processor recipe. Otto works 25% faster.' },
   { level: 5, name: 'Full Production', cost: 400, description: 'Unlocks all recipes. +$15 base wage. Town reaches City.' },
 ];
+
+const REPUTATION_TIERS = [
+  { min: 0, max: 0.9, title: 'Unknown', effect: 'No bonuses' },
+  { min: 1, max: 1.9, title: 'Newcomer', effect: 'NPCs are slightly friendlier (+1 dialog unlock)' },
+  { min: 2, max: 2.9, title: 'Regular', effect: 'Diner gives free coffee once per day' },
+  { min: 3, max: 3.9, title: 'Respected', effect: 'Factory wage +$5 passive bonus' },
+  { min: 4, max: 4.9, title: 'Pillar', effect: 'All shop prices reduced by 10%' },
+  { min: 5, max: 5, title: 'Town Legend', effect: 'All perks active regardless of friendship level' },
+];
+
+const NPC_SPILLOVER = {
+  boss: { otto: 1 },
+  otto: { boss: 1 },
+  rita: { chef: 1, maya: 1 },
+  chef: { rita: 1, sam: 1 },
+  maya: { rita: 1, doc: 1 },
+  doc: { maya: 1 },
+  sam: { chef: 1 },
+};
 
 // ── GAME STATE ────────────────────────────────────────────
 const gameState = {
@@ -924,6 +946,36 @@ const gameState = {
       dialog: ['Pass me that wrench.', 'Nice hustle.', 'We make a good team.', 'I got your back today.', "Best partner I've had."],
       friendship: 0,
     },
+    {
+      id: 'maya', name: 'MAYA', x: 108, y: 168, scene: 'STREET', spr: 'npc_maya',
+      role: 'Librarian',
+      schedule: { morning: 'STREET', evening: 'STREET' },
+      gift: 'coffee_item',
+      perk: { description: 'Library study gives +15 bonus XP', type: 'library_bonus', value: 15 },
+      dialog: ['Knowledge is power.', 'Have you visited the library?', 'I saved you a good book.', "You're quite the scholar.", 'I learn something from you too.'],
+      friendship: 0,
+      minTownLv: 2,
+    },
+    {
+      id: 'doc', name: 'DOC CHEN', x: 176, y: 168, scene: 'STREET', spr: 'npc_doc',
+      role: 'Town Doctor',
+      schedule: { morning: 'STREET', evening: 'STREET' },
+      gift: 'coffee_item',
+      perk: { description: 'Clinic check-up costs $5 instead of $10', type: 'clinic_discount', value: 5 },
+      dialog: ['Stay healthy out there.', 'How are you feeling today?', 'Looking well, I must say.', 'I keep an eye out for you.', "You're my healthiest patient."],
+      friendship: 0,
+      minTownLv: 3,
+    },
+    {
+      id: 'sam', name: 'SAM', x: 232, y: 168, scene: 'STREET', spr: 'npc_sam',
+      role: 'Market Vendor',
+      schedule: { morning: 'STREET', evening: 'STREET' },
+      gift: 'scrapMetal',
+      perk: { description: 'Market bulk prices reduced by $3', type: 'market_discount', value: 3 },
+      dialog: ['Best deals in town!', 'Come back anytime.', "I'll set aside the good stuff.", 'Special price, just for you.', "You're my best customer."],
+      friendship: 0,
+      minTownLv: 4,
+    },
   ],
   shopItems: [
     { id: 'bread', label: 'BREAD  +40 hunger', cost: 4, type: 'food', hunger: 40 },
@@ -935,6 +987,7 @@ const gameState = {
   giftedToday: [],
   totalGiftsGiven: 0,
   ritaWarnedToday: false,
+  freeCoffeeUsed: false,
   craftItems: [
     { id: 'bolt', label: 'BASIC BOLT', time: 15, energy: 8, pay: 12, minLv: 1, mat: { scrapMetal: 2 } },
     { id: 'gear', label: 'GEAR', time: 25, energy: 14, pay: 24, minLv: 2, mat: { scrapMetal: 3, wire: 1 } },
@@ -1443,6 +1496,7 @@ function drawObjects() {
 function drawNPCs() {
   for (const n of gameState.npcs) {
     if (n.scene !== gameState.scene) continue;
+    if (!isNPCUnlocked(n)) continue;
     const s = spriteCache[n.spr];
     if (s) ctx.drawImage(s, n.x, n.y, 16, 32);
     // name tag — always readable
@@ -1520,6 +1574,7 @@ function nearObj() {
 function nearNPC() {
   for (const n of gameState.npcs) {
     if (n.scene !== gameState.scene) continue;
+    if (!isNPCUnlocked(n)) continue;
     if (Math.abs(player.x - n.x) < 24 && Math.abs(player.y - n.y) < 24) return n;
   }
   return null;
@@ -1575,8 +1630,8 @@ function interact() {
       });
     } else { endShift(true); changeScene('STREET', 108, 96); }
   } else if (a === 'diner') {
-    const chefNpc = gameState.npcs.find(n => n.id === 'chef');
-    const hasDiscount = chefNpc && (chefNpc.friendship || 0) >= 3;
+    const chefNpc = getNPCById('chef');
+    const hasDiscount = isPerkActive(chefNpc);
     const p1 = hasDiscount ? Math.floor(8 * 0.8) : 8;
     const p2 = hasDiscount ? Math.floor(3 * 0.8) : 3;
     const p3 = hasDiscount ? Math.floor(3 * 0.8) : 3;
@@ -1584,33 +1639,63 @@ function interact() {
     modal('DINER', `Chef Bob's Diner${discNote}`, [`Full meal  $${p1}  +60 hunger`, `Snack  $${p2}  +25 hunger`, `Coffee  $${p3}  +30 energy`, 'Leave'], i => {
       if (i === 0 && pay(p1)) { gameState.hunger = cap(gameState.hunger + 60); log('Had a full meal at the diner.', 'g'); if (hasDiscount) log("Chef Bob's discount applied!", 'g'); }
       else if (i === 1 && pay(p2)) { gameState.hunger = cap(gameState.hunger + 25); log('Quick snack at the diner.', 'g'); if (hasDiscount) log("Chef Bob's discount applied!", 'g'); }
-      else if (i === 2 && pay(p3)) { gameState.energy = cap(gameState.energy + 30); log('Coffee! Feeling energized.', 'g'); if (hasDiscount) log("Chef Bob's discount applied!", 'g'); }
+      else if (i === 2) {
+        if (gameState.rep >= 2 && !gameState.freeCoffeeUsed) {
+          gameState.freeCoffeeUsed = true;
+          gameState.energy = cap(gameState.energy + 30);
+          log('On the house! (Regular customer perk)', 'g');
+          log('Coffee! Feeling energized.', 'g');
+          if (hasDiscount) log("Chef Bob's discount applied!", 'g');
+        } else if (pay(p3)) {
+          gameState.energy = cap(gameState.energy + 30);
+          log('Coffee! Feeling energized.', 'g');
+          if (hasDiscount) log("Chef Bob's discount applied!", 'g');
+        }
+      }
     });
   } else if (a === 'shop') {
     doShop();
   } else if (a === 'town_hall') {
-    modal('TOWN HALL', `Factory Level: ${gameState.factoryLv}   Town Level: ${gameState.townLv}\nFactory XP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\nReputation: ${repStr(gameState.rep)}\nDisciplines on record: ${gameState.disciplines}`, ['Close'], []);
+    modal('TOWN HALL', `Factory Level: ${gameState.factoryLv}   Town Level: ${gameState.townLv}\nFactory XP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\nReputation: ${repStr(gameState.rep)}  ${getRepTitle()}\nDisciplines on record: ${gameState.disciplines}`, ['Close'], []);
   } else if (a === 'park') {
     modal('PARK', 'Take a break.', ['Rest 30 min  +15 energy', 'Go for a walk  +10 min', 'Leave'], i => {
       if (i === 0) { gameState.time += 30; gameState.energy = cap(gameState.energy + 15); log('Rested at the park.', 'g'); }
       else if (i === 1) { gameState.time += 10; log('Nice walk through the park.', 'g'); }
     });
   } else if (a === 'library') {
+    const mayaNpc = getNPCById('maya');
+    const mayaBonus = isPerkActive(mayaNpc) ? 15 : 0;
+    const studyLabel = `Study (30 min, +25 Factory XP${mayaBonus ? ' +15 bonus' : ''})`;
     modal('TOWN LIBRARY', 'Expand your knowledge.\nStudy to earn Factory XP.', [
-      'Study (30 min, +25 Factory XP)',
+      studyLabel,
       'Read for fun (15 min, +10 energy)',
       'Leave',
     ], i => {
-      if (i === 0) { gameState.time += 30; gameState.factoryXP += 25; log('You studied at the library.', 'g'); checkFactoryLv(); }
+      if (i === 0) {
+        gameState.time += 30;
+        gameState.factoryXP += 25;
+        if (mayaBonus) {
+          gameState.factoryXP += 15;
+          log("Maya's recommendation: +15 bonus XP!", 'g');
+        }
+        log('You studied at the library.', 'g');
+        checkFactoryLv();
+      }
       else if (i === 1) { gameState.time += 15; gameState.energy = cap(gameState.energy + 10); log('You read for fun at the library.', 'g'); }
     });
   } else if (a === 'clinic') {
+    const docNpc = getNPCById('doc');
+    const checkupCost = isPerkActive(docNpc) ? 5 : 10;
     modal('TOWN CLINIC', 'Get patched up or grab a health boost.', [
-      'Check-up  $10  (restore hunger + energy)',
+      `Check-up  $${checkupCost}  (restore hunger + energy)`,
       'Buy vitamins  $8  (halve hunger drain today)',
       'Leave',
     ], i => {
-      if (i === 0 && pay(10)) { gameState.hunger = 100; gameState.energy = 100; log('Check-up done! Hunger and energy fully restored.', 'g'); }
+      if (i === 0 && pay(checkupCost)) {
+        gameState.hunger = 100; gameState.energy = 100;
+        if (checkupCost === 5) log("Doc Chen's discount applied!", 'g');
+        log('Check-up done! Hunger and energy fully restored.', 'g');
+      }
       else if (i === 1 && pay(8)) { gameState.vitaminsToday = true; log('Vitamins taken! Hunger drain halved for today.', 'g'); }
     });
   } else if (a === 'market') {
@@ -1659,8 +1744,8 @@ function interact() {
         if (!completeTaskByIndex(idx, 'player')) return;
         const tasksDoneNow = gameState.tasks.filter(t => t).length;
         if (tasksDoneNow === 2) {
-          const ottoNpc = gameState.npcs.find(n => n.id === 'otto');
-          if (ottoNpc && (ottoNpc.friendship || 0) >= 3 && Math.random() < 0.4) {
+          const ottoNpc = getNPCById('otto');
+          if (isPerkActive(ottoNpc) && Math.random() < 0.4) {
             const remIdx = gameState.tasks.map((t, ii) => !t ? ii : -1).filter(ii => ii >= 0 && gameState.assignedTasks[ii] !== 'otto');
             if (remIdx.length > 0) {
               completeTaskByIndex(remIdx[0], 'otto_perk');
@@ -1861,13 +1946,19 @@ function doShop() {
 
 function doShopFood() {
   const inv = gameState.inventory;
+  const pillarDiscount = gameState.rep >= 4;
+  const breadCost = applyPillarDiscount(4);
+  const coffeeCost = applyPillarDiscount(3);
+  const mealCost = applyPillarDiscount(8);
+  const drinkCost = applyPillarDiscount(6);
+  const desc = `Buy food and drinks:${pillarDiscount ? '\n(Pillar discount)' : ''}`;
   const items = [
-    { label: `BREAD         $4   +40 hunger  (have: ${inv.bread || 0})`, fn: () => { if (pay(4)) { inv.bread = (inv.bread || 0) + 1; log('Bought bread. +40 hunger when eaten.', 'g'); } } },
-    { label: 'COFFEE        $3   +30 energy (immediate)', fn: () => { if (pay(3)) { gameState.energy = cap(gameState.energy + 30); log('Drank coffee \u2014 energized!', 'g'); } } },
-    { label: 'HOT MEAL      $8   +70 hunger +20 energy', fn: () => { if (pay(8)) { gameState.hunger = cap(gameState.hunger + 70); gameState.energy = cap(gameState.energy + 20); log('Had a hot meal. Feeling good!', 'g'); } } },
-    { label: `ENERGY DRINK  $6   +50 energy  (have: ${inv.energy_drink || 0})`, fn: () => { if (pay(6)) { inv.energy_drink = (inv.energy_drink || 0) + 1; log('Bought energy drink. Use from inventory.', 'g'); } } },
+    { label: `BREAD         $${breadCost}   +40 hunger  (have: ${inv.bread || 0})`, fn: () => { if (pay(breadCost)) { inv.bread = (inv.bread || 0) + 1; log('Bought bread. +40 hunger when eaten.', 'g'); } } },
+    { label: `COFFEE        $${coffeeCost}   +30 energy (immediate)`, fn: () => { if (pay(coffeeCost)) { gameState.energy = cap(gameState.energy + 30); log('Drank coffee — energized!', 'g'); } } },
+    { label: `HOT MEAL      $${mealCost}   +70 hunger +20 energy`, fn: () => { if (pay(mealCost)) { gameState.hunger = cap(gameState.hunger + 70); gameState.energy = cap(gameState.energy + 20); log('Had a hot meal. Feeling good!', 'g'); } } },
+    { label: `ENERGY DRINK  $${drinkCost}   +50 energy  (have: ${inv.energy_drink || 0})`, fn: () => { if (pay(drinkCost)) { inv.energy_drink = (inv.energy_drink || 0) + 1; log('Bought energy drink. Use from inventory.', 'g'); } } },
   ];
-  modal('FOOD & CONSUMABLES', 'Buy food and drinks:', [...items.map(it => it.label), 'Back', 'Leave Shop'], i => {
+  modal('FOOD & CONSUMABLES', desc, [...items.map(it => it.label), 'Back', 'Leave Shop'], i => {
     if (i < items.length) { items[i].fn(); doShopFood(); }
     else if (i === items.length) doShop();
   });
@@ -1875,14 +1966,15 @@ function doShopFood() {
 
 function doShopEquip() {
   const inv = gameState.inventory;
+  const pillarDiscount = gameState.rep >= 4;
   const items = [
-    { id: 'uniform',  label: `UNIFORM   $20  +10% pay`,     cost: 20 },
-    { id: 'bike',     label: `BIKE      $35  10min travel`,  cost: 35 },
-    { id: 'bus_pass', label: `BUS PASS  $15  5min, $2/trip`, cost: 15 },
-    { id: 'toolbelt', label: `TOOLBELT  $45  -20% craft energy`, cost: 45 },
-    { id: 'thermos',  label: `THERMOS   $25  -15% energy drain`, cost: 25 },
+    { id: 'uniform',  label: `UNIFORM   $${applyPillarDiscount(20)}  +10% pay`,     cost: applyPillarDiscount(20) },
+    { id: 'bike',     label: `BIKE      $${applyPillarDiscount(35)}  10min travel`,  cost: applyPillarDiscount(35) },
+    { id: 'bus_pass', label: `BUS PASS  $${applyPillarDiscount(15)}  5min, $2/trip`, cost: applyPillarDiscount(15) },
+    { id: 'toolbelt', label: `TOOLBELT  $${applyPillarDiscount(45)}  -20% craft energy`, cost: applyPillarDiscount(45) },
+    { id: 'thermos',  label: `THERMOS   $${applyPillarDiscount(25)}  -15% energy drain`, cost: applyPillarDiscount(25) },
   ];
-  modal('EQUIPMENT', 'One-time purchases:', [...items.map(it => it.label + (inv[it.id] ? '  \u2713 OWNED' : '')), 'Back', 'Leave Shop'], i => {
+  modal('EQUIPMENT', `One-time purchases:${pillarDiscount ? '\n(Pillar discount)' : ''}`, [...items.map(it => it.label + (inv[it.id] ? '  \u2713 OWNED' : '')), 'Back', 'Leave Shop'], i => {
     if (i < items.length) {
       const it = items[i];
       if (inv[it.id]) { log('You already own: ' + it.id + '.', 'w'); }
@@ -1894,6 +1986,12 @@ function doShopEquip() {
 
 function doShopMaterials() {
   const inv = gameState.inventory;
+  const pillarDiscount = gameState.rep >= 4;
+  const scrap1 = applyPillarDiscount(3);
+  const scrap5 = applyPillarDiscount(15);
+  const wire1 = applyPillarDiscount(5);
+  const wire3 = applyPillarDiscount(15);
+  const circuit1 = applyPillarDiscount(12);
   function buyMat(key, qty, cost) {
     if (pay(cost)) {
       inv[key] = (inv[key] || 0) + qty;
@@ -1904,20 +2002,20 @@ function doShopMaterials() {
     doShopMaterials();
   }
   const desc = `Scrap Metal: ${inv.scrapMetal || 0}   Wire: ${inv.wire || 0}   Circuit: ${inv.circuit || 0}`;
-  modal('MATERIALS', desc, [
-    `SCRAP METAL  $3   (have: ${inv.scrapMetal || 0})  Buy 1`,
-    `SCRAP METAL  $15  Buy 5`,
-    `WIRE         $5   (have: ${inv.wire || 0})  Buy 1`,
-    `WIRE         $15  Buy 3`,
-    `CIRCUIT      $12  (have: ${inv.circuit || 0})  Buy 1`,
+  modal('MATERIALS', `${desc}${pillarDiscount ? '\n(Pillar discount)' : ''}`, [
+    `SCRAP METAL  $${scrap1}   (have: ${inv.scrapMetal || 0})  Buy 1`,
+    `SCRAP METAL  $${scrap5}  Buy 5`,
+    `WIRE         $${wire1}   (have: ${inv.wire || 0})  Buy 1`,
+    `WIRE         $${wire3}  Buy 3`,
+    `CIRCUIT      $${circuit1}  (have: ${inv.circuit || 0})  Buy 1`,
     'Back',
     'Leave Shop',
   ], i => {
-    if (i === 0) buyMat('scrapMetal', 1, 3);
-    else if (i === 1) buyMat('scrapMetal', 5, 15);
-    else if (i === 2) buyMat('wire', 1, 5);
-    else if (i === 3) buyMat('wire', 3, 15);
-    else if (i === 4) buyMat('circuit', 1, 12);
+    if (i === 0) buyMat('scrapMetal', 1, scrap1);
+    else if (i === 1) buyMat('scrapMetal', 5, scrap5);
+    else if (i === 2) buyMat('wire', 1, wire1);
+    else if (i === 3) buyMat('wire', 3, wire3);
+    else if (i === 4) buyMat('circuit', 1, circuit1);
     else if (i === 5) doShop();
   });
 }
@@ -1940,27 +2038,38 @@ function doShopGifts() {
 
 function doMarket() {
   const inv = gameState.inventory;
+  const samNpc = getNPCById('sam');
+  const samDiscount = isPerkActive(samNpc) ? 3 : 0;
+  const scrapCost = Math.max(1, 25 - samDiscount);
+  const wireCost = Math.max(1, 20 - samDiscount);
+  const circuitCost = Math.max(1, 30 - samDiscount);
+  const mealCost = 5;
   function buyBulk(key, qty, cost) {
     if (pay(cost)) {
       inv[key] = (inv[key] || 0) + qty;
       gameState.materialsBought = (gameState.materialsBought || 0) + qty;
       const label = key === 'scrapMetal' ? 'Scrap Metal' : key === 'wire' ? 'Wire' : 'Circuit';
       log(`Market: bought ${qty}x ${label} for $${cost}.`, 'g');
+      if (samDiscount) log("Sam's deal: -$3!", 'g');
       checkQuest('material_girl');
     }
     doMarket();
   }
-  modal('TOWN MARKET', 'Better prices on bulk orders.', [
-    'Bulk Scrap Metal  x10  $25',
-    'Bulk Wire         x5   $20',
-    'Bulk Circuit      x3   $30',
-    'Meal Deal  $5  +60 hunger +15 energy',
+  modal('TOWN MARKET', `Better prices on bulk orders.${samDiscount ? "\nSam's deal: -$3!" : ''}`, [
+    `Bulk Scrap Metal  x10  $${scrapCost}`,
+    `Bulk Wire         x5   $${wireCost}`,
+    `Bulk Circuit      x3   $${circuitCost}`,
+    `Meal Deal  $${mealCost}  +60 hunger +15 energy`,
     'Leave',
   ], i => {
-    if (i === 0) buyBulk('scrapMetal', 10, 25);
-    else if (i === 1) buyBulk('wire', 5, 20);
-    else if (i === 2) buyBulk('circuit', 3, 30);
-    else if (i === 3 && pay(5)) { gameState.hunger = cap(gameState.hunger + 60); gameState.energy = cap(gameState.energy + 15); log('Meal deal! +60 hunger, +15 energy.', 'g'); }
+    if (i === 0) buyBulk('scrapMetal', 10, scrapCost);
+    else if (i === 1) buyBulk('wire', 5, wireCost);
+    else if (i === 2) buyBulk('circuit', 3, circuitCost);
+    else if (i === 3 && pay(mealCost)) {
+      gameState.hunger = cap(gameState.hunger + 60);
+      gameState.energy = cap(gameState.energy + 15);
+      log('Meal deal! +60 hunger, +15 energy.', 'g');
+    }
   });
 }
 
@@ -1970,7 +2079,7 @@ function talkNPC(n) {
   const hearts = '♥'.repeat(f) + '♡'.repeat(5 - f);
   const role = n.role || '';
   const perkDesc = n.perk
-    ? (f >= 3 ? `PERK ACTIVE \u2713: ${n.perk.description}` : `PERK (locked): ${n.perk.description}`)
+    ? (isPerkActive(n) ? `PERK ACTIVE \u2713: ${n.perk.description}` : `PERK (locked): ${n.perk.description}`)
     : '';
   const desc = `"${line}"\n\n${hearts}\n\n${perkDesc}`;
   const opts = ['Say hi'];
@@ -1979,9 +2088,8 @@ function talkNPC(n) {
   modal(`TALKING TO: ${n.name}  (${role})`, desc, opts, i => {
     const chosen = opts[i];
     if (chosen === 'Befriend (+1 friendship)') {
-      n.friendship = Math.min(5, (n.friendship || 0) + 1);
+      applyFriendshipGain(n, 1, 'friendship');
       gameState.rep = Math.min(5, gameState.rep + 0.2);
-      log(`+1 friendship with ${n.name}.`, 'g');
       checkQuest('getting_to_know');
       checkQuest('town_friend');
       checkQuest('factory_crew');
@@ -2031,11 +2139,11 @@ function doGiftNPC(n) {
     gameState.giftedToday.push(n.id);
     gameState.totalGiftsGiven = (gameState.totalGiftsGiven || 0) + 1;
     if (gift.id === n.gift) {
-      n.friendship = Math.min(5, (n.friendship || 0) + 2);
-      log(`${n.name} loved it! +2 friendship`, 'g');
+      applyFriendshipGain(n, 2, 'gift');
+      log(`${n.name} loved it!`, 'g');
     } else {
-      n.friendship = Math.min(5, (n.friendship || 0) + 1);
-      log(`${n.name} appreciated the gift. +1 friendship`, 'g');
+      applyFriendshipGain(n, 1, 'gift');
+      log(`${n.name} appreciated the gift.`, 'g');
     }
     checkQuest('getting_to_know');
     checkQuest('town_friend');
@@ -2100,6 +2208,7 @@ function doSleep() {
     gameState._warnedLate = false;
     gameState.giftedToday = [];
     gameState.ritaWarnedToday = false;
+    gameState.freeCoffeeUsed = false;
     gameState.vitaminsToday = false;
     gameState.attendedEventToday = false;
     gameState.day++;
@@ -2117,10 +2226,14 @@ function endShift(complete) {
   const done = gameState.tasks.filter(t => t).length;
   let p = gameState.wage + (done === 3 ? 10 : 0) + gameState.craftedToday * 3;
   if (gameState.inventory.uniform) p = Math.round(p * 1.1);
-  const vanceNpc = gameState.npcs.find(n => n.id === 'boss');
-  if (vanceNpc && (vanceNpc.friendship || 0) >= 3) {
+  const vanceNpc = getNPCById('boss');
+  if (isPerkActive(vanceNpc)) {
     p += 8;
     log('Vance bonus: +$8', 'g');
+  }
+  if (gameState.rep >= 3) {
+    p += 5;
+    log('Respected worker bonus: +$5', 'g');
   }
   gameState.money += p;
   gameState.weeklyPay += p;
@@ -2141,6 +2254,34 @@ function pay(amt) {
 
 function cap(v, mx = 100) { return Math.min(mx, Math.max(0, v)); }
 function repStr(r) { return '★'.repeat(Math.round(r)) + '☆'.repeat(5 - Math.round(r)); }
+function getRepTier(r = gameState.rep) {
+  return REPUTATION_TIERS.find(t => r >= t.min && r <= t.max) || REPUTATION_TIERS[0];
+}
+function getRepTitle(r = gameState.rep) { return getRepTier(r).title; }
+function getNPCById(id) { return gameState.npcs.find(n => n.id === id); }
+function isNPCUnlocked(n) { return !n.minTownLv || gameState.townLv >= n.minTownLv; }
+function isPerkActive(npc) { return !!npc && (((npc.friendship || 0) >= 3) || gameState.rep >= 5); }
+function applyPillarDiscount(price) {
+  if (gameState.rep < 4) return price;
+  return Math.max(1, Math.floor(price * 0.9));
+}
+function applyFriendshipGain(npc, amount, reason = 'friendship') {
+  if (!npc || amount <= 0) return;
+  const before = npc.friendship || 0;
+  npc.friendship = Math.min(5, before + amount);
+  const gained = (npc.friendship || 0) - before;
+  if (gained <= 0) return;
+  log(`+${gained} friendship with ${npc.name}.`, 'g');
+  const spill = NPC_SPILLOVER[npc.id] || {};
+  Object.entries(spill).forEach(([targetId, spillAmt]) => {
+    const target = getNPCById(targetId);
+    if (!target) return;
+    const oldVal = target.friendship || 0;
+    target.friendship = Math.min(5, oldVal + spillAmt);
+    const delta = (target.friendship || 0) - oldVal;
+    if (delta > 0) log(`${target.name} heard about your ${reason} with ${npc.name}. +${delta} friendship.`, 'g');
+  });
+}
 function changeScene(sc, px, py) { gameState.scene = sc; player.x = px; player.y = py; }
 
 // ── PASSIVE ────────────────────────────────────────────────────────────
@@ -2185,8 +2326,8 @@ function passive() {
     if (n.schedule) n.scene = isMorning ? n.schedule.morning : n.schedule.evening;
   }
   // Rita hunger warning (once per day)
-  const ritaNpc = gameState.npcs.find(n => n.id === 'rita');
-  if (ritaNpc && (ritaNpc.friendship || 0) >= 3 && gameState.hunger < 30 && !gameState.ritaWarnedToday) {
+  const ritaNpc = getNPCById('rita');
+  if (isPerkActive(ritaNpc) && gameState.hunger < 30 && !gameState.ritaWarnedToday) {
     gameState.ritaWarnedToday = true;
     log("Rita: 'Hey, you look hungry! Grab something to eat.'", 'w');
   }
@@ -2214,6 +2355,7 @@ function moveP() {
   }
   for (const n of gameState.npcs) {
     if (n.scene !== gameState.scene) continue;
+    if (!isNPCUnlocked(n)) continue;
     if (Math.abs(nx - n.x) < 14 && Math.abs(ny - n.y) < 16) { blocked = true; break; }
   }
   if (!blocked) { player.x = nx; player.y = ny; }
@@ -2245,7 +2387,7 @@ function updateHUD() {
   document.getElementById('hfl').textContent = 'Lv ' + gameState.factoryLv;
   document.getElementById('htl').textContent = 'Lv ' + gameState.townLv;
   document.getElementById('sb-loc').textContent = '📍 ' + gameState.scene;
-  document.getElementById('sb-rep').textContent = 'Rep: ' + repStr(gameState.rep);
+  document.getElementById('sb-rep').textContent = `Rep: ${repStr(gameState.rep)}  ${getRepTitle()}`;
   document.getElementById('sb-disc').textContent = 'Disciplines: ' + gameState.disciplines;
   const w = [];
   if (gameState.hunger < 30) w.push('⚠ HUNGRY');
@@ -2316,7 +2458,7 @@ window.showInventory = () => {
   });
 };
 window.showStatus = () => {
-  modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
+  modal('PLAYER STATUS', `Day ${gameState.day}  (${DAYS[(gameState.day - 1) % 7]})\n\nMoney: $${gameState.money}\nHunger: ${Math.round(gameState.hunger)}%   Energy: ${Math.round(gameState.energy)}%\nRep: ${repStr(gameState.rep)}  ${getRepTitle()}   Disciplines: ${gameState.disciplines}\n\nFactory Lv ${gameState.factoryLv}  (XP: ${gameState.factoryXP})\nTown Lv ${gameState.townLv}\nCrafted today: ${gameState.craftedToday}\nTravel method: ${gameState.travelMethod}`, ['Close'], []);
 };
 
 // ── SAVE / LOAD ───────────────────────────────────────────────────────────
@@ -2361,6 +2503,7 @@ function applyLoad(raw) {
     if (gameState.giftedToday === undefined) gameState.giftedToday = [];
     if (gameState.totalGiftsGiven === undefined) gameState.totalGiftsGiven = 0;
     if (gameState.ritaWarnedToday === undefined) gameState.ritaWarnedToday = false;
+    if (gameState.freeCoffeeUsed === undefined) gameState.freeCoffeeUsed = false;
     if (gameState.vitaminsToday === undefined) gameState.vitaminsToday = false;
     if (gameState.attendedEventToday === undefined) gameState.attendedEventToday = false;
     if (inv.coffee_item === undefined) inv.coffee_item = 0;
@@ -2384,6 +2527,9 @@ function applyLoad(raw) {
       rita: { role: 'Town Resident', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'bread', perk: { description: 'Warn you if hunger < 30 (saves 5 min)', type: 'hunger_warn', value: 5 }, dialog: ['Morning!', "Nice day, isn't it?", "You're always so friendly.", 'I baked you something!', "You're my favorite neighbor."] },
       chef: { role: 'Diner Owner', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'coffee_item', perk: { description: '20% discount at the diner', type: 'diner_discount', value: 0.2 }, dialog: ['Best grub in town!', 'Try the special!', "You're a regular now.", 'On the house today!', 'Anything for my best customer.'] },
       otto: { role: 'Factory Worker', schedule: { morning: 'FACTORY', evening: 'STREET' }, gift: 'scrapMetal', perk: { description: 'Occasionally completes 1 task for you', type: 'task_help', value: 1 }, dialog: ['Pass me that wrench.', 'Nice hustle.', 'We make a good team.', 'I got your back today.', "Best partner I've had."] },
+      maya: { role: 'Librarian', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'coffee_item', perk: { description: 'Library study gives +15 bonus XP', type: 'library_bonus', value: 15 }, dialog: ['Knowledge is power.', 'Have you visited the library?', 'I saved you a good book.', "You're quite the scholar.", 'I learn something from you too.'], minTownLv: 2 },
+      doc: { role: 'Town Doctor', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'coffee_item', perk: { description: 'Clinic check-up costs $5 instead of $10', type: 'clinic_discount', value: 5 }, dialog: ['Stay healthy out there.', 'How are you feeling today?', 'Looking well, I must say.', 'I keep an eye out for you.', "You're my healthiest patient."], minTownLv: 3 },
+      sam: { role: 'Market Vendor', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'scrapMetal', perk: { description: 'Market bulk prices reduced by $3', type: 'market_discount', value: 3 }, dialog: ['Best deals in town!', 'Come back anytime.', "I'll set aside the good stuff.", 'Special price, just for you.', "You're my best customer."], minTownLv: 4 },
     };
     gameState.npcs.forEach(n => {
       const prof = npcProfiles[n.id];
@@ -2393,6 +2539,17 @@ function applyLoad(raw) {
       if (!n.gift) n.gift = prof.gift;
       if (!n.perk) n.perk = prof.perk;
       if (!n.dialog || n.dialog.length < 5) n.dialog = prof.dialog;
+      if (n.minTownLv === undefined && prof.minTownLv !== undefined) n.minTownLv = prof.minTownLv;
+    });
+    const missingNpcs = [
+      { id: 'maya', name: 'MAYA', x: 108, y: 168, scene: 'STREET', spr: 'npc_maya', friendship: 0 },
+      { id: 'doc', name: 'DOC CHEN', x: 176, y: 168, scene: 'STREET', spr: 'npc_doc', friendship: 0 },
+      { id: 'sam', name: 'SAM', x: 232, y: 168, scene: 'STREET', spr: 'npc_sam', friendship: 0 },
+    ];
+    missingNpcs.forEach(base => {
+      if (gameState.npcs.find(n => n.id === base.id)) return;
+      const prof = npcProfiles[base.id];
+      gameState.npcs.push({ ...base, role: prof.role, schedule: prof.schedule, gift: prof.gift, perk: prof.perk, dialog: prof.dialog, minTownLv: prof.minTownLv });
     });
     const px = data.playerPos ? data.playerPos.x : player.x;
     const py = data.playerPos ? data.playerPos.y : player.y;
