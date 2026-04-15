@@ -14,18 +14,19 @@
   color: #e7ebff;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
+  width: 100%;
+  min-height: 100vh;
   padding: 8px;
   line-height: 1.5;
+  gap: 5px;
 }
 
 #hud {
-  width: 640px;
-  max-width: 100%;
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(9, 1fr);
   gap: 4px;
-  margin-bottom: 5px;
 }
 
 .hb {
@@ -62,20 +63,24 @@
 
 #cc {
   position: relative;
-  width: 640px;
-  max-width: 100%;
+  width: 100%;
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 canvas {
   display: block;
   image-rendering: pixelated;
-  width: 100%;
+  image-rendering: crisp-edges;
   border: 2px solid #2a2a4a;
 }
 
 #log {
-  width: 640px;
-  max-width: 100%;
+  width: 100%;
   background: #060610;
   border: 1.5px solid #2a2a4a;
   border-top: none;
@@ -168,9 +173,7 @@ canvas {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 640px;
-  max-width: 100%;
-  margin-top: 6px;
+  width: 100%;
   gap: 8px;
 }
 
@@ -210,8 +213,7 @@ canvas {
 }
 
 #statusbar {
-  width: 640px;
-  max-width: 100%;
+  width: 100%;
   background: #060610;
   border: 1.5px solid #2a2a4a;
   border-top: none;
@@ -311,9 +313,32 @@ canvas {
 <script>
 const canvas = document.getElementById('gc');
 const ctx = canvas.getContext('2d');
-canvas.width = 320;
-canvas.height = 240;
-const CANVAS_W = 320, CANVAS_H = 240, TILE_SIZE = 16;
+const cc = document.getElementById('cc');
+const TILE_SIZE = 16;
+const BASE_CANVAS_W = 320;
+const BASE_CANVAS_H = 240;
+const PIXEL_SCALE = 2;
+let CANVAS_W = BASE_CANVAS_W;
+let CANVAS_H = BASE_CANVAS_H;
+
+function resizeCanvas() {
+  const availableW = Math.max(BASE_CANVAS_W, Math.floor(cc.clientWidth));
+  const availableH = Math.max(BASE_CANVAS_H, Math.floor(cc.clientHeight));
+  const scale = Math.max(1, Math.min(PIXEL_SCALE, Math.floor(Math.min(availableW / BASE_CANVAS_W, availableH / BASE_CANVAS_H))));
+  const logicalW = Math.floor(availableW / scale);
+  const logicalH = Math.floor(availableH / scale);
+  CANVAS_W = Math.max(BASE_CANVAS_W, logicalW - (logicalW % TILE_SIZE));
+  CANVAS_H = Math.max(BASE_CANVAS_H, logicalH - (logicalH % TILE_SIZE));
+  canvas.width = CANVAS_W;
+  canvas.height = CANVAS_H;
+  canvas.style.width = `${CANVAS_W * scale}px`;
+  canvas.style.height = `${CANVAS_H * scale}px`;
+  ctx.imageSmoothingEnabled = false;
+  if (typeof player !== 'undefined') {
+    player.x = Math.max(4, Math.min(CANVAS_W - 10, player.x));
+    player.y = Math.max(4, Math.min(CANVAS_H - 24, player.y));
+  }
+}
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SEASON_SETTINGS = {
   daysPerSeason: 7,
@@ -3865,6 +3890,9 @@ document.addEventListener('keyup', e => keys[e.key] = false);
     dp.appendChild(btn);
   });
 })();
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
 gameState.dailyTasks = pickDailyTasks();
 refreshDailyTaskUI();
