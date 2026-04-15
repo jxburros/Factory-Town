@@ -340,6 +340,15 @@ const PALETTE = {
   neonPink: '#ff00ff',
 };
 
+// ── TOWN LEVEL DEFINITIONS ───────────────────────────────────────────
+const TOWN_LEVELS = [
+  { lv: 1, name: 'Hamlet',     unlocks: null,               flavor: 'A quiet hamlet — home, diner, shop and park.' },
+  { lv: 2, name: 'Village',    unlocks: 'Library',          flavor: 'A library opens its doors, bringing knowledge to all.' },
+  { lv: 3, name: 'Small Town', unlocks: 'Clinic',           flavor: 'The clinic opens, keeping every resident healthy.' },
+  { lv: 4, name: 'Town',       unlocks: 'Market',           flavor: 'A bustling market brings bulk deals and new trade.' },
+  { lv: 5, name: 'City',       unlocks: 'Community Center', flavor: 'The Community Center rises — the heart of the city!' },
+];
+
 const spriteCache = {};
 function makeSpr(key, w, h, fn) {
   const oc = document.createElement('canvas');
@@ -1423,6 +1432,40 @@ function interact() {
       if (i === 0) { gameState.time += 30; gameState.energy = cap(gameState.energy + 15); log('Rested at the park.', 'g'); }
       else if (i === 1) { gameState.time += 10; log('Nice walk through the park.', 'g'); }
     });
+  } else if (a === 'library') {
+    modal('TOWN LIBRARY', 'Expand your knowledge.\nStudy to earn Factory XP.', [
+      'Study (30 min, +25 Factory XP)',
+      'Read for fun (15 min, +10 energy)',
+      'Leave',
+    ], i => {
+      if (i === 0) { gameState.time += 30; gameState.factoryXP += 25; log('You studied at the library.', 'g'); checkFactoryLv(); }
+      else if (i === 1) { gameState.time += 15; gameState.energy = cap(gameState.energy + 10); log('You read for fun at the library.', 'g'); }
+    });
+  } else if (a === 'clinic') {
+    modal('TOWN CLINIC', 'Get patched up or grab a health boost.', [
+      'Check-up  $10  (restore hunger + energy)',
+      'Buy vitamins  $8  (halve hunger drain today)',
+      'Leave',
+    ], i => {
+      if (i === 0 && pay(10)) { gameState.hunger = 100; gameState.energy = 100; log('Check-up done! Hunger and energy fully restored.', 'g'); }
+      else if (i === 1 && pay(8)) { gameState.vitaminsToday = true; log('Vitamins taken! Hunger drain halved for today.', 'g'); }
+    });
+  } else if (a === 'market') {
+    doMarket();
+  } else if (a === 'community_center') {
+    const attended = !!gameState.attendedEventToday;
+    modal('COMMUNITY CENTER', 'The heart of the city.', [
+      attended ? 'Event attended today  (come back tomorrow)' : 'Attend event  FREE  +1 rep  (once per day)',
+      'Leave',
+    ], i => {
+      if (i === 0 && !attended) {
+        gameState.attendedEventToday = true;
+        gameState.rep = Math.min(5, gameState.rep + 1);
+        log('You attended a community event! +1 rep.', 'g');
+      } else if (i === 0 && attended) {
+        log('You already attended an event today.', 'w');
+      }
+    });
   } else if (a === 'storage') {
     const inv = gameState.inventory;
     const storOpts = [];
@@ -1539,17 +1582,47 @@ function doCraft() {
   });
 }
 
+// ── TOWN BUILDINGS ───────────────────────────────────────────────────
+function applyTownBuildings() {
+  const defs = [
+    { lv: 2, x: 88,  y: 148, w: 64, h: 48, lbl: 'LIBRARY',         act: 'library',          col: '#1a2f7a' },
+    { lv: 3, x: 160, y: 148, w: 56, h: 48, lbl: 'CLINIC',          act: 'clinic',           col: '#7a1a1a' },
+    { lv: 4, x: 220, y: 148, w: 44, h: 48, lbl: 'MARKET',          act: 'market',           col: '#1a5a22' },
+    { lv: 5, x: 88,  y: 60,  w: 48, h: 32, lbl: 'COMM.\nCENTER',   act: 'community_center', col: '#5a3300' },
+  ];
+  for (const def of defs) {
+    if (gameState.townLv >= def.lv && !SCENE_OBJECTS['STREET'].find(o => o.act === def.act)) {
+      SCENE_OBJECTS['STREET'].push(Object.assign({}, def));
+    }
+  }
+}
+
+function triggerTownLevelUp(newLv) {
+  const info = TOWN_LEVELS[newLv - 1];
+  log(`The town has grown to ${info.name}!`, 'w');
+  applyTownBuildings();
+  const unlockLine = info.unlocks ? `New building unlocked:\n${info.unlocks} added to STREET!` : '';
+  modal(
+    'TOWN GROWS!',
+    `Town Level ${newLv}: ${info.name}${unlockLine ? '\n\n' + unlockLine : ''}\n\n${info.flavor}`,
+    ['Celebrate!'],
+    () => {}
+  );
+}
+
 function doUpgrade() {
   const cost = gameState.factoryLv * 80;
   modal('UPGRADE STATION', `Upgrade factory to Level ${gameState.factoryLv + 1}?\n\nCost: $${cost}\nCurrent XP: ${gameState.factoryXP} / ${gameState.factoryLv * 100}\n\nUnlocks better crafting recipes.`, [`Upgrade  ($${cost})`, 'Cancel'], i => {
     if (i === 0) {
       if (gameState.money < cost) { log('Not enough money to upgrade.', 'b'); return; }
+      const oldTownLv = gameState.townLv;
       gameState.money -= cost;
       gameState.factoryLv++;
       gameState.factoryXP = 0;
       if (gameState.townLv < gameState.factoryLv) gameState.townLv = Math.min(gameState.factoryLv, 5);
       log(`Factory upgraded to Level ${gameState.factoryLv}! The town grows.`, 'g');
       checkQuest('upgrade_ready');
+      if (gameState.townLv > oldTownLv) triggerTownLevelUp(gameState.townLv);
     }
   });
 }
@@ -1642,6 +1715,32 @@ function doShopGifts() {
       if (pay(it.cost)) { inv[it.id] = (inv[it.id] || 0) + 1; log(`Bought: ${it.label.split('  ')[0].trim()}.`, 'g'); }
       doShopGifts();
     } else if (i === items.length) doShop();
+  });
+}
+
+function doMarket() {
+  const inv = gameState.inventory;
+  function buyBulk(key, qty, cost) {
+    if (pay(cost)) {
+      inv[key] = (inv[key] || 0) + qty;
+      gameState.materialsBought = (gameState.materialsBought || 0) + qty;
+      const label = key === 'scrapMetal' ? 'Scrap Metal' : key === 'wire' ? 'Wire' : 'Circuit';
+      log(`Market: bought ${qty}x ${label} for $${cost}.`, 'g');
+      checkQuest('material_girl');
+    }
+    doMarket();
+  }
+  modal('TOWN MARKET', 'Better prices on bulk orders.', [
+    'Bulk Scrap Metal  x10  $25',
+    'Bulk Wire         x5   $20',
+    'Bulk Circuit      x3   $30',
+    'Meal Deal  $5  +60 hunger +15 energy',
+    'Leave',
+  ], i => {
+    if (i === 0) buyBulk('scrapMetal', 10, 25);
+    else if (i === 1) buyBulk('wire', 5, 20);
+    else if (i === 2) buyBulk('circuit', 3, 30);
+    else if (i === 3 && pay(5)) { gameState.hunger = cap(gameState.hunger + 60); gameState.energy = cap(gameState.energy + 15); log('Meal deal! +60 hunger, +15 energy.', 'g'); }
   });
 }
 
@@ -1776,6 +1875,8 @@ function doSleep() {
     gameState._warnedLate = false;
     gameState.giftedToday = [];
     gameState.ritaWarnedToday = false;
+    gameState.vitaminsToday = false;
+    gameState.attendedEventToday = false;
     gameState.day++;
     gameState.hunger = Math.max(gameState.hunger - 10, 20);
     if (gameState.hunger < 30) log('You woke up hungry. Find food soon!', 'w');
@@ -1823,7 +1924,8 @@ function passive() {
   if (passiveTick < 200) return;
   passiveTick = 0;
   gameState.time++;
-  gameState.hunger = Math.max(0, gameState.hunger - 0.4);
+  const _hDrain = gameState.vitaminsToday ? 0.2 : 0.4;
+  gameState.hunger = Math.max(0, gameState.hunger - _hDrain);
   const energyDrain = gameState.inventory.thermos ? 0.15 * 0.85 : 0.15;
   gameState.energy = Math.max(0, gameState.energy - energyDrain);
   if (gameState.scene === 'STREET' && !gameState.clothed) {
@@ -2011,6 +2113,8 @@ function applyLoad(raw) {
     if (gameState.giftedToday === undefined) gameState.giftedToday = [];
     if (gameState.totalGiftsGiven === undefined) gameState.totalGiftsGiven = 0;
     if (gameState.ritaWarnedToday === undefined) gameState.ritaWarnedToday = false;
+    if (gameState.vitaminsToday === undefined) gameState.vitaminsToday = false;
+    if (gameState.attendedEventToday === undefined) gameState.attendedEventToday = false;
     if (inv.coffee_item === undefined) inv.coffee_item = 0;
     // Inject any new quests missing from old saves
     const newQuests = [
@@ -2042,6 +2146,7 @@ function applyLoad(raw) {
     const py = data.playerPos ? data.playerPos.y : player.y;
     if (data.playerPos) player.facing = data.playerPos.facing || 2;
     changeScene(gameState.scene, px, py);
+    applyTownBuildings();
     updateHUD();
     log('Game loaded.', 'g');
     return true;
@@ -2160,6 +2265,7 @@ document.addEventListener('keyup', e => keys[e.key] = false);
 
 function loop() { moveP(); draw(); updateHUD(); requestAnimationFrame(loop); }
 loop();
+applyTownBuildings();
 
 // ── STARTUP SAVE CHECK ────────────────────────────────────────────────────
 (function checkStartupSave() {
