@@ -2873,7 +2873,7 @@ function doManagementDashboard() {
         actions.push({ worker: 'otto', idx });
       }
     }
-    if (!gameState.tasks[idx] && assignedKaiIdx === -1 && !gameState.assignedTasks[idx] && gameState.assignedTasks[idx] !== 'otto') {
+    if (!gameState.tasks[idx] && assignedKaiIdx === -1 && !gameState.assignedTasks[idx]) {
       if (canDelegateKai) {
         opts.push(`Delegate "${gameState.taskNames[idx]}" → Kai (faster)`);
         actions.push({ worker: 'jrtech', idx });
@@ -2890,7 +2890,8 @@ function doManagementDashboard() {
     gameState.assignedTasks[taskIdx] = worker;
     const task = getDailyTaskByIndex(taskIdx);
     const baseSpeedMult = gameState.automationLine ? 1.5 : 2;
-    const kaiMult = worker === 'jrtech' ? (2 / 3) : 1;
+    // Kai is 50% faster than Otto, so Kai takes 1/1.5 = 0.667x Otto's time
+    const kaiMult = worker === 'jrtech' ? (1 / 1.5) : 1;
     gameState.ottoWorkTimer = Math.max(1, Math.ceil(task.time * baseSpeedMult * kaiMult));
     gameState.computerDelegations = (gameState.computerDelegations || 0) + 1;
     const workerName = worker === 'jrtech' ? 'Kai' : 'Otto';
@@ -3304,9 +3305,8 @@ function doGiftNPC(n) {
     }
     const socNpc = getNPCById('soc');
     if (isPerkActive(socNpc)) {
-      const repBoost = 0.1 * (socNpc.perk?.value || 0.5);
-      gameState.rep = Math.min(5, gameState.rep + repBoost);
-      log("Vera's perk: bonus rep from gift!", 'g');
+      gameState.rep = Math.min(5, gameState.rep + 0.1);
+      log("Vera's perk: +0.1 rep from gift!", 'g');
     }
     checkQuest('getting_to_know');
     checkQuest('town_friend');
@@ -3750,10 +3750,10 @@ function updateContractsForNewDay() {
       c.status = 'failed';
       const extraPenalty = gameState.marketEvent && gameState.marketEvent.type === 'price_war' ? 0.1 : 0;
       const logiNpc = getNPCById('logi');
-      const logiReduce = isPerkActive(logiNpc) ? (logiNpc.perk?.value || 5) / 100 : 0;
-      const penaltyRep = Math.max(0.05, 0.2 + extraPenalty - logiReduce);
+      const logiReduceFraction = isPerkActive(logiNpc) ? 0.25 : 0;
+      const penaltyRep = Math.max(0.05, (0.2 + extraPenalty) * (1 - logiReduceFraction));
       gameState.rep = Math.max(0, gameState.rep - penaltyRep);
-      if (logiReduce > 0) log("Felix's perk reduced contract penalty.", 'g');
+      if (logiReduceFraction > 0) log("Felix's perk reduced contract penalty by 25%.", 'g');
       gameState.contractStreak = 0;
       log(`CONTRACT FAILED: ${c.title}. No payment.`, 'b');
       checkQuest('on_schedule');
@@ -4273,7 +4273,11 @@ function applyLoad(raw) {
     missingNpcs.forEach(base => {
       if (gameState.npcs.find(n => n.id === base.id)) return;
       const prof = npcProfiles[base.id];
-      if (!prof) { gameState.npcs.push(base); return; }
+      if (!prof) {
+        log(`Warning: no profile for NPC ${base.id}, adding base data only.`, 'w');
+        gameState.npcs.push(base);
+        return;
+      }
       gameState.npcs.push({ ...base, role: prof.role, schedule: prof.schedule, gift: prof.gift, perk: prof.perk, dialog: prof.dialog, minTownLv: prof.minTownLv });
     });
     const factoryLoadMaxX = getFactorySplitX() - 10;
