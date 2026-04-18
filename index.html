@@ -61,6 +61,14 @@
   color: #44ff88;
 }
 
+.hv.ts-slow {
+  color: #66ccff;
+}
+
+.hv.ts-fast {
+  color: #ff9944;
+}
+
 #cc {
   position: relative;
   width: 100%;
@@ -324,7 +332,9 @@ let CANVAS_H = BASE_CANVAS_H;
 function resizeCanvas() {
   const availableW = Math.max(BASE_CANVAS_W, Math.floor(cc.clientWidth));
   const availableH = Math.max(BASE_CANVAS_H, Math.floor(cc.clientHeight));
-  const scale = Math.max(1, Math.min(PIXEL_SCALE, Math.floor(Math.min(availableW / BASE_CANVAS_W, availableH / BASE_CANVAS_H))));
+  const scaleW = Math.max(1, Math.floor(availableW / BASE_CANVAS_W));
+  const scaleH = Math.max(1, Math.floor(availableH / BASE_CANVAS_H));
+  const scale = Math.max(1, Math.min(PIXEL_SCALE, Math.min(scaleW, scaleH)));
   const logicalW = Math.floor(availableW / scale);
   const logicalH = Math.floor(availableH / scale);
   CANVAS_W = Math.max(BASE_CANVAS_W, logicalW - (logicalW % TILE_SIZE));
@@ -905,6 +915,79 @@ makeNPC('npc_otto', '#446688', '#333333', '#445566');
 makeNPC('npc_maya', '#4466aa', '#332211', '#223344');
 makeNPC('npc_doc', '#ffffff', '#111111', '#334455');
 makeNPC('npc_sam', '#aa6622', '#553311', '#443322');
+makeNPC('npc_logi', '#228844', '#664422', '#224422');
+makeNPC('npc_soc', '#cc8822', '#aa4488', '#885522');
+makeNPC('npc_jrtech', '#3366cc', '#111111', '#223366');
+
+makeSpr('post_office', 48, 48, ox => {
+  ox.fillStyle = '#6688aa';
+  ox.fillRect(0, 16, 48, 32);
+  for (let r = 16; r < 48; r += 4) {
+    ox.fillStyle = r % 8 === 0 ? '#5577aa' : '#446699';
+    ox.fillRect(0, r, 48, 4);
+  }
+  ox.fillStyle = '#3355aa';
+  ox.fillRect(0, 10, 48, 8);
+  ox.fillStyle = '#2244aa';
+  ox.fillRect(0, 10, 48, 2);
+  ox.fillStyle = PALETTE.cream;
+  ox.fillRect(6, 2, 36, 8);
+  ox.fillStyle = '#111';
+  ox.font = 'bold 4px monospace';
+  ox.fillText('POST', 10, 7);
+  ox.fillStyle = PALETTE.yellow;
+  ox.fillRect(6, 2, 36, 1);
+  ox.fillRect(6, 9, 36, 1);
+  [6, 28].forEach(wx => {
+    ox.fillStyle = PALETTE.windowBlue;
+    ox.fillRect(wx, 20, 10, 10);
+    ox.fillStyle = PALETTE.white;
+    ox.fillRect(wx, 20, 10, 1);
+    ox.fillRect(wx, 20, 1, 10);
+    ox.fillStyle = PALETTE.windowYellow;
+    ox.fillRect(wx + 2, 22, 3, 3);
+    ox.fillRect(wx + 6, 22, 3, 3);
+  });
+  ox.fillStyle = PALETTE.wood2;
+  ox.fillRect(17, 34, 14, 14);
+  ox.fillStyle = PALETTE.yellow2;
+  ox.fillRect(28, 41, 2, 2);
+});
+
+makeSpr('lounge', 48, 48, ox => {
+  ox.fillStyle = '#8844aa';
+  ox.fillRect(0, 16, 48, 32);
+  for (let r = 16; r < 48; r += 4) {
+    ox.fillStyle = r % 8 === 0 ? '#7733aa' : '#662299';
+    ox.fillRect(0, r, 48, 4);
+  }
+  ox.fillStyle = '#662299';
+  ox.fillRect(0, 10, 48, 8);
+  ox.fillStyle = '#551188';
+  ox.fillRect(0, 10, 48, 2);
+  ox.fillStyle = PALETTE.neonPink;
+  ox.fillRect(6, 2, 36, 8);
+  ox.fillStyle = '#111';
+  ox.font = 'bold 4px monospace';
+  ox.fillText('LOUNGE', 6, 7);
+  ox.fillStyle = PALETTE.neonCyan;
+  ox.fillRect(6, 2, 36, 1);
+  ox.fillRect(6, 9, 36, 1);
+  [4, 28].forEach(wx => {
+    ox.fillStyle = '#5522aa';
+    ox.fillRect(wx, 20, 14, 12);
+    ox.fillStyle = PALETTE.neonPink;
+    ox.fillRect(wx + 2, 22, 4, 4);
+    ox.fillRect(wx + 8, 22, 4, 4);
+    ox.fillStyle = PALETTE.white;
+    ox.fillRect(wx, 20, 14, 1);
+    ox.fillRect(wx, 20, 1, 12);
+  });
+  ox.fillStyle = PALETTE.wood2;
+  ox.fillRect(17, 34, 14, 14);
+  ox.fillStyle = PALETTE.yellow2;
+  ox.fillRect(27, 41, 2, 2);
+});
 
 function makePlayer(key, frame, facing, clothed, uniform) {
   makeSpr(key, 8, 16, ox => {
@@ -1063,6 +1146,11 @@ const gameState = {
   scene: 'HOME',
   shiftDone: false,
   weeklyPay: 0,
+  briefingShownToday: false,
+  visitedPostOfficeToday: false,
+  visitedLoungeToday: false,
+  computerDelegations: 0,
+  allTasksBeforeNoon: false,
   inventory: { bread: 1, coffee: 0, coffee_item: 0, uniform: 0, bike: 0, bus_pass: 0, scrapMetal: 0, wire: 0, circuit: 0, toolbelt: 0, thermos: 0, energy_drink: 0, gloves: 0, lunchbox: 0, blueprint: 0 },
   carryLimit: 15,
   homeLv: 1,
@@ -1149,6 +1237,33 @@ const gameState = {
       dialog: ['Best deals in town!', 'Come back anytime.', "I'll set aside the good stuff.", 'Special price, just for you.', "You're my best customer."],
       friendship: 0,
       minTownLv: 4,
+    },
+    {
+      id: 'logi', name: 'FELIX', x: 40, y: 56, scene: 'STREET_LEFT', spr: 'npc_logi',
+      role: 'Logistics Specialist',
+      schedule: { morning: 'STREET_LEFT', evening: 'STREET_LEFT' },
+      gift: 'coffee_item',
+      perk: { description: 'Contract late penalties reduced by $5', type: 'contract_penalty_reduce', value: 5 },
+      dialog: ['Packages in, packages out.', 'On-time delivery is everything.', 'I can help cut your losses.', 'Your reputation precedes you.', "Best logistics partner I've had."],
+      friendship: 0,
+    },
+    {
+      id: 'soc', name: 'VERA', x: 60, y: 56, scene: 'STREET_RIGHT', spr: 'npc_soc',
+      role: 'Socialite',
+      schedule: { morning: 'STREET_RIGHT', evening: 'STREET_RIGHT' },
+      gift: 'bread',
+      perk: { description: 'Gifting gives +50% extra reputation', type: 'rep_gift_boost', value: 0.5 },
+      dialog: ['Everyone loves a good party!', 'The buzz around town is real.', 'I can open doors for you.', 'You are the talk of the town!', "You're simply the best around."],
+      friendship: 0,
+    },
+    {
+      id: 'jrtech', name: 'KAI', x: 80, y: 90, scene: 'FACTORY_OFFICE', spr: 'npc_jrtech',
+      role: 'Junior Tech',
+      schedule: { morning: 'FACTORY_OFFICE', evening: 'FACTORY_OFFICE' },
+      gift: 'scrapMetal',
+      perk: { description: 'Can be delegated tasks and works 50% faster than Otto', type: 'fast_worker', value: 1.5 },
+      dialog: ['Ready to work!', 'Just point me at a task.', "I'll get it done faster.", 'Speed and accuracy — that\'s me.', "Best hire you've ever made."],
+      friendship: 0,
     },
   ],
   shopItems: [
@@ -1451,6 +1566,36 @@ const gameState = {
       reward: { money: 120, xp: 60, rep: 1 },
       progress: 0,
     },
+    {
+      id: 'the_modern_manager',
+      title: 'The Modern Manager',
+      description: 'Successfully delegate 5 tasks using the Office Computer.',
+      type: 'progression',
+      status: 'available',
+      goal: { type: 'computer_delegations', target: 5 },
+      reward: { money: 50, xp: 40, rep: 0.5 },
+      progress: 0,
+    },
+    {
+      id: 'town_explorer',
+      title: 'Town Explorer',
+      description: 'Visit both the Post Office and the Lounge in a single day.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'visit_both_buildings', target: 1 },
+      reward: { money: 20, xp: 15, rep: 0.3 },
+      progress: 0,
+    },
+    {
+      id: 'efficiency_expert',
+      title: 'Efficiency Expert',
+      description: 'Complete all 3 daily tasks before 12:00 PM.',
+      type: 'side',
+      status: 'available',
+      goal: { type: 'all_tasks_before_noon', target: 1 },
+      reward: { money: 35, xp: 30, rep: 0.4 },
+      progress: 0,
+    },
   ],
 };
 Object.defineProperty(gameState, 'carryUsed', { get: () => getCarryUsed() });
@@ -1519,6 +1664,13 @@ function addGameMinutes(minutes, reason = 'time_pass') {
       gameState.emit('hour_change', { previousHour: h - 1, hour: h % 24, time: gameState.time, reason });
     }
   }
+}
+
+function getTimeScale() {
+  const sc = gameState.scene;
+  if (sc === 'FACTORY' || sc === 'FACTORY_OFFICE') return 0.5;
+  if (sc === 'STREET' || sc === 'STREET_LEFT' || sc === 'STREET_RIGHT') return 1.5;
+  return 1.0;
 }
 
 
@@ -1642,7 +1794,8 @@ const TILE_MAPS = {
   STREET: mkMap((r, c) => r <= 4 || r >= 10 ? 'grass' : (r === 5 || r === 9 ? 'sidewalk' : 'street')),
   STREET_LEFT: mkMap((r, c) => r <= 4 || r >= 10 ? 'grass' : (r === 5 || r === 9 ? 'sidewalk' : 'street')),
   STREET_RIGHT: mkMap((r, c) => r <= 4 || r >= 10 ? 'grass' : (r === 5 || r === 9 ? 'sidewalk' : 'street')),
-  FACTORY: mkMap((r, c) => r === 0 || r === 14 || c === 0 || c === 19 ? 'factory_wall' : 'factory_floor')
+  FACTORY: mkMap((r, c) => r === 0 || r === 14 || c === 0 || c === 19 ? 'factory_wall' : 'factory_floor'),
+  FACTORY_OFFICE: mkMap((r, c) => r === 0 || r === 14 || c === 0 || c === 19 ? 'wall' : 'floor_wood'),
 };
 
 function getHomeSplitX() {
@@ -1671,9 +1824,11 @@ const SCENE_OBJECTS = {
   ],
   STREET_LEFT: [
     { x: 28, y: 168, w: 80, h: 64, lbl: 'FACTORY', act: 'enter_factory', spr: 'factory', portal: true },
+    { x: 192, y: 4, w: 48, h: 48, lbl: 'POST OFFICE', act: 'enter_post_office', spr: 'post_office', portal: true },
   ],
   STREET_RIGHT: [
     { x: 236, y: 24, w: 48, h: 48, lbl: 'HOME', act: 'enter_home', spr: 'house', portal: true },
+    { x: 4, y: 4, w: 48, h: 48, lbl: 'LOUNGE', act: 'enter_lounge', spr: 'lounge', portal: true },
   ],
   FACTORY: [
     { x: 12, y: 18, w: 48, h: 32, lbl: 'SWEEP', act: 'task0', spr: 'craftstation', taskIdx: 0 },
@@ -1683,8 +1838,14 @@ const SCENE_OBJECTS = {
     { x: 18, y: 122, w: 48, h: 48, lbl: 'CRAFT', act: 'craft', spr: 'craftstation' },
     { x: 88, y: 122, w: 52, h: 36, lbl: 'UPGRADE', act: 'upgrade', col: '#443322' },
     { x: 100, y: 166, w: 52, h: 34, lbl: 'STORAGE', act: 'storage', col: '#333355' },
+    { x: 142, y: 10, w: 18, h: 14, lbl: 'OFFICE', act: 'enter_factory_office', portal: true, col: '#1a2a3a' },
     { x: 36, y: 204, w: 64, h: 28, lbl: 'EXIT', act: 'exit_factory', portal: true, col: '#664422' },
-  ]
+  ],
+  FACTORY_OFFICE: [
+    { x: 16, y: 24, w: 40, h: 28, lbl: 'COMPUTER', act: 'computer', col: '#0a1a3a' },
+    { x: 100, y: 24, w: 48, h: 28, lbl: 'CONTRACT\nTERMINAL', act: 'computer_contracts', col: '#0a2a1a' },
+    { x: 68, y: 180, w: 64, h: 28, lbl: 'EXIT\nOFFICE', act: 'exit_factory_office', portal: true, col: '#664422' },
+  ],
 };
 
 function getTaskDef(taskId) {
@@ -1723,6 +1884,10 @@ function handleDailyTaskCompletion() {
     if (new Set(gameState.dailyTasks).size === 3) {
       gameState.diversifiedToday = true;
       checkQuest('diversified');
+    }
+    if (gameState.time <= 12 * 60) {
+      gameState.allTasksBeforeNoon = true;
+      checkQuest('efficiency_expert');
     }
     notifyAction('All 3 tasks done! Head to the Craft Station.', 'g');
     checkQuest('first_day');
@@ -1880,6 +2045,41 @@ function drawTiles() {
 }
 
 function drawSceneDecor() {
+  if (gameState.scene === 'FACTORY_OFFICE') {
+    ctx.fillStyle = '#112233';
+    ctx.fillRect(8, 18, 60, 36);
+    ctx.strokeStyle = '#224466';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(8.5, 18.5, 59, 35);
+    ctx.fillStyle = '#001122';
+    ctx.fillRect(14, 22, 48, 28);
+    ctx.strokeStyle = '#00aaff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(14.5, 22.5, 47, 27);
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = `rgba(0,${100 + i * 20},${180 + i * 10},0.18)`;
+      ctx.fillRect(14, 22 + i * 5, 48, 5);
+    }
+    drawLabel('MGMT DASHBOARD', 12, 32, { size: 5, color: '#00ccff', bg: 'rgba(0,10,30,0.8)', border: 'rgba(0,170,255,0.4)' });
+    ctx.fillStyle = '#1a2a4a';
+    ctx.fillRect(96, 18, 72, 36);
+    ctx.strokeStyle = '#224466';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(96.5, 18.5, 71, 35);
+    ctx.fillStyle = '#001a11';
+    ctx.fillRect(102, 22, 60, 28);
+    ctx.strokeStyle = '#00cc88';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(102.5, 22.5, 59, 27);
+    drawLabel('CONTRACT VIEW', 98, 32, { size: 5, color: '#00ff88', bg: 'rgba(0,20,10,0.8)', border: 'rgba(0,200,100,0.4)' });
+    ctx.fillStyle = '#2a1a0a';
+    ctx.fillRect(8, 80, CANVAS_W - 16, 72);
+    ctx.strokeStyle = '#6a4a2a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(8.5, 80.5, CANVAS_W - 17, 71);
+    drawLabel('FACTORY OFFICE', CANVAS_W / 2 - 52, 14, { size: 6, color: '#ffdd88', bg: 'rgba(20,10,0,0.8)', border: 'rgba(255,200,100,0.5)' });
+    return;
+  }
   if (gameState.scene === 'STREET' || gameState.scene === 'STREET_LEFT' || gameState.scene === 'STREET_RIGHT') {
     ctx.fillStyle = PALETTE.streetLine;
     for (let c = 0; c < CANVAS_W; c += 24) ctx.fillRect(c, CANVAS_H / 2 - 1, 12, 2);
@@ -2326,6 +2526,51 @@ Carried — Scrap: ${inv.scrapMetal || 0}  Wire: ${inv.wire || 0}  Circuit: ${in
     if (!gameState.clothed) { log('You cannot enter without clothing.', 'b'); return; }
     changeScene('FACTORY', 78, 186);
     processFactoryArrival();
+  } else if (a === 'enter_factory_office') {
+    changeScene('FACTORY_OFFICE', 100, 100);
+    log('You enter the factory office.', 'g');
+  } else if (a === 'exit_factory_office') {
+    changeScene('FACTORY', 78, 186);
+    log('You return to the factory floor.', 'g');
+  } else if (a === 'computer') {
+    doManagementDashboard();
+  } else if (a === 'computer_contracts') {
+    doContractBoard();
+  } else if (a === 'enter_post_office') {
+    gameState.visitedPostOfficeToday = true;
+    checkQuest('town_explorer');
+    const logiNpc = getNPCById('logi');
+    const hasDiscount = isPerkActive(logiNpc);
+    const penaltyNote = hasDiscount ? '\nFelix\'s perk: Contract late penalties reduced by $5.' : '\nBefriend Felix to reduce late contract penalties.';
+    modal('POST OFFICE', `The Post Office & Logistics Hub.\n\nAccept urgent contracts or receive rare materials.${penaltyNote}`, [
+      'Check urgent contracts',
+      'Close',
+    ], i => {
+      if (i === 0) doContractBoard();
+    });
+  } else if (a === 'enter_lounge') {
+    gameState.visitedLoungeToday = true;
+    checkQuest('town_explorer');
+    const hour = Math.floor(gameState.time / 60) % 24;
+    const isEvening = hour >= 14;
+    const desc = isEvening
+      ? 'The Lounge is buzzing tonight. NPCs are gathering!'
+      : 'The Lounge is quiet right now. Come back after 2 PM for socializing.';
+    modal('THE LOUNGE', desc, [
+      isEvening ? 'Socialize (+1 rep, 20 min)' : 'Hang out (10 min)',
+      'Close',
+    ], i => {
+      if (i === 0) {
+        if (isEvening) {
+          addGameMinutes(20, 'lounge_socialize');
+          gameState.rep = Math.min(5, gameState.rep + 1);
+          log('You socialized at the Lounge! +1 rep.', 'g');
+        } else {
+          addGameMinutes(10, 'lounge_hangout');
+          log('You hung out at the Lounge.', 'g');
+        }
+      }
+    });
   } else if (a === 'exit_factory') {
     const undone = gameState.tasks.filter(t => !t).length;
     if (undone > 0 && !gameState.shiftDone) {
@@ -2479,6 +2724,32 @@ function processFactoryArrival() {
   } else {
     log('Arrived on time! Complete the 3 morning tasks first.', 'g');
   }
+  if (!gameState.briefingShownToday) {
+    gameState.briefingShownToday = true;
+    const taskLines = [0, 1, 2].map(i => {
+      const t = getDailyTaskByIndex(i);
+      const assigned = gameState.assignedTasks[i] === 'otto' ? ' [→ Otto]' : '';
+      return `${i + 1}. ${t.label}  (${t.time}min, -${t.energy}en)${assigned}`;
+    });
+    const desc = `Today's Tasks:\n${taskLines.join('\n')}\n\nUse ASSIGN TASKS to delegate to Otto.\nOpen the OFFICE COMPUTER to use the Management Dashboard.`;
+    modal('DAILY BRIEFING', desc, ['Got it — start work', 'Assign all to Otto'], i => {
+      if (i === 1) {
+        const ottoNpc = gameState.npcs.find(n => n.id === 'otto');
+        if (!ottoNpc || (ottoNpc.friendship || 0) < 1) {
+          log("Otto: 'We're not close enough for that yet.'", 'b');
+          return;
+        }
+        const firstUnassigned = [0, 1, 2].find(idx => !gameState.tasks[idx]);
+        if (firstUnassigned === undefined) return;
+        gameState.assignedTasks = { 0: null, 1: null, 2: null };
+        gameState.assignedTasks[firstUnassigned] = 'otto';
+        const task = getDailyTaskByIndex(firstUnassigned);
+        const speedMult = gameState.automationLine ? 1.5 : 2;
+        gameState.ottoWorkTimer = Math.max(1, Math.ceil(task.time * speedMult));
+        log('Otto is on the assigned task.', 'g');
+      }
+    });
+  }
 }
 
 function doTravel(opt, scene, px, py) {
@@ -2553,6 +2824,78 @@ function doAssignTasks() {
     const speedMult = gameState.automationLine ? 1.5 : 2;
     gameState.ottoWorkTimer = Math.max(1, Math.ceil(task.time * speedMult));
     log('Otto is on it.', 'g');
+  });
+}
+
+function doManagementDashboard() {
+  const taskStatus = [0, 1, 2].map(idx => {
+    const label = gameState.taskNames[idx];
+    if (gameState.tasks[idx]) return `${label} — DONE`;
+    if (gameState.assignedTasks[idx] === 'otto') return `${label} — Otto working`;
+    if (gameState.assignedTasks[idx] === 'jrtech') return `${label} — Kai working`;
+    return `${label} — Available`;
+  });
+  const active = (gameState.contracts || []).filter(c => c.status === 'active');
+  const contractLines = active.length
+    ? active.map(c => `${c.title}: ${c.delivered}/${c.qty} (${c.daysLeft}d left)`)
+    : ['No active contracts'];
+  const efficiency = Math.min(100, Math.round(
+    (gameState.factoryLv / 5) * 60 +
+    (gameState.improvedTools ? 10 : 0) +
+    (gameState.newEquipment ? 15 : 0) +
+    (gameState.automationLine ? 10 : 0) +
+    (gameState.fullProduction ? 5 : 0)
+  ));
+  const desc = [
+    '— TASKS —',
+    ...taskStatus,
+    '',
+    '— ACTIVE CONTRACTS —',
+    ...contractLines,
+    '',
+    `— FACTORY EFFICIENCY: ${efficiency}% —`,
+    `Delegations used: ${gameState.computerDelegations || 0}`,
+  ].join('\n');
+
+  const ottoNpc = gameState.npcs.find(n => n.id === 'otto');
+  const kaiNpc = gameState.npcs.find(n => n.id === 'jrtech');
+  const canDelegateOtto = ottoNpc && (ottoNpc.friendship || 0) >= 1;
+  const canDelegateKai = kaiNpc && (kaiNpc.friendship || 0) >= 1;
+  const assignedIdx = getAssignedTaskIndex('otto');
+  const assignedKaiIdx = getAssignedTaskIndex('jrtech');
+
+  const opts = [];
+  const actions = [];
+  for (let idx = 0; idx < 3; idx++) {
+    if (!gameState.tasks[idx] && assignedIdx === -1 && !gameState.assignedTasks[idx]) {
+      if (canDelegateOtto) {
+        opts.push(`Delegate "${gameState.taskNames[idx]}" → Otto`);
+        actions.push({ worker: 'otto', idx });
+      }
+    }
+    if (!gameState.tasks[idx] && assignedKaiIdx === -1 && !gameState.assignedTasks[idx] && gameState.assignedTasks[idx] !== 'otto') {
+      if (canDelegateKai) {
+        opts.push(`Delegate "${gameState.taskNames[idx]}" → Kai (faster)`);
+        actions.push({ worker: 'jrtech', idx });
+      }
+    }
+  }
+  opts.push('View Contract Board', 'Close');
+
+  modal('MANAGEMENT DASHBOARD', desc, opts, i => {
+    if (i === opts.length - 2) { doContractBoard(); return; }
+    if (i >= actions.length) return;
+    const { worker, idx: taskIdx } = actions[i];
+    gameState.assignedTasks = { 0: null, 1: null, 2: null };
+    gameState.assignedTasks[taskIdx] = worker;
+    const task = getDailyTaskByIndex(taskIdx);
+    const baseSpeedMult = gameState.automationLine ? 1.5 : 2;
+    const kaiMult = worker === 'jrtech' ? (2 / 3) : 1;
+    gameState.ottoWorkTimer = Math.max(1, Math.ceil(task.time * baseSpeedMult * kaiMult));
+    gameState.computerDelegations = (gameState.computerDelegations || 0) + 1;
+    const workerName = worker === 'jrtech' ? 'Kai' : 'Otto';
+    log(`${workerName} is now working on: ${task.label}`, 'g');
+    checkQuest('the_modern_manager');
   });
 }
 
@@ -2959,6 +3302,12 @@ function doGiftNPC(n) {
       applyFriendshipGain(n, BALANCE.relationship.regularGiftFriendship, 'gift');
       log(`${n.name} appreciated the gift.`, 'g');
     }
+    const socNpc = getNPCById('soc');
+    if (isPerkActive(socNpc)) {
+      const repBoost = 0.1 * (socNpc.perk?.value || 0.5);
+      gameState.rep = Math.min(5, gameState.rep + repBoost);
+      log("Vera's perk: bonus rep from gift!", 'g');
+    }
     checkQuest('getting_to_know');
     checkQuest('town_friend');
     checkQuest('factory_crew');
@@ -3031,6 +3380,10 @@ function doSleep() {
     gameState.morningRoutineDone = false;
     updateContractsForNewDay();
     advanceSeasonForNewDay();
+    gameState.briefingShownToday = false;
+    gameState.visitedPostOfficeToday = false;
+    gameState.visitedLoungeToday = false;
+    gameState.allTasksBeforeNoon = false;
     gameState.day++;
     gameState.emit('day_start', { day: gameState.day, time: gameState.time });
     gameState.hunger = Math.max(gameState.hunger - BALANCE.progression.dailyHungerLossOnWake, BALANCE.passive.lowHungerFloorOnWake);
@@ -3396,7 +3749,11 @@ function updateContractsForNewDay() {
     if (c.daysLeft <= 0 && c.delivered < c.qty) {
       c.status = 'failed';
       const extraPenalty = gameState.marketEvent && gameState.marketEvent.type === 'price_war' ? 0.1 : 0;
-      gameState.rep = Math.max(0, gameState.rep - 0.2 - extraPenalty);
+      const logiNpc = getNPCById('logi');
+      const logiReduce = isPerkActive(logiNpc) ? (logiNpc.perk?.value || 5) / 100 : 0;
+      const penaltyRep = Math.max(0.05, 0.2 + extraPenalty - logiReduce);
+      gameState.rep = Math.max(0, gameState.rep - penaltyRep);
+      if (logiReduce > 0) log("Felix's perk reduced contract penalty.", 'g');
       gameState.contractStreak = 0;
       log(`CONTRACT FAILED: ${c.title}. No payment.`, 'b');
       checkQuest('on_schedule');
@@ -3411,10 +3768,11 @@ function changeScene(sc, px, py) { gameState.scene = sc; player.x = px; player.y
 function passive() {
   const { player: playerState, inventory, relationships } = gameState.systems;
   passiveTick++;
-  if (passiveTick < 200) return;
+  if (passiveTick < 40) return;
   passiveTick = 0;
-  addGameMinutes(1, 'passive_tick');
-  let _hDrain = BALANCE.passive.hungerDrainPerMinute;
+  const ts = getTimeScale();
+  addGameMinutes(ts, 'passive_tick');
+  let _hDrain = BALANCE.passive.hungerDrainPerMinute * ts;
   if (inventory.lunchbox) _hDrain *= BALANCE.passive.lunchboxHungerMult;
   if (gameState.vitaminsToday) _hDrain *= BALANCE.passive.vitaminsHungerMult;
   playerState.hunger = Math.max(0, playerState.hunger - _hDrain);
@@ -3422,7 +3780,7 @@ function passive() {
   const baseEnergyDrain = inventory.thermos
     ? BALANCE.passive.energyDrainPerMinute * BALANCE.passive.thermosEnergyMult
     : BALANCE.passive.energyDrainPerMinute;
-  const energyDrain = baseEnergyDrain * season.energyDrainMult;
+  const energyDrain = baseEnergyDrain * season.energyDrainMult * ts;
   playerState.energy = Math.max(0, playerState.energy - energyDrain);
   const datingPartner = getDatingPartner();
   if (datingPartner) {
@@ -3435,11 +3793,14 @@ function passive() {
   if (gameState.ottoWorkTimer > 0) {
     gameState.ottoWorkTimer = Math.max(0, gameState.ottoWorkTimer - 1);
     if (gameState.ottoWorkTimer === 0) {
-      const taskIdx = getAssignedTaskIndex('otto');
+      const ottoIdx = getAssignedTaskIndex('otto');
+      const kaiIdx = getAssignedTaskIndex('jrtech');
+      const taskIdx = ottoIdx !== -1 ? ottoIdx : kaiIdx;
+      const workerName = ottoIdx !== -1 ? 'Otto' : 'Kai';
       if (taskIdx !== -1 && !gameState.tasks[taskIdx]) {
-        completeTaskByIndex(taskIdx, 'otto');
+        completeTaskByIndex(taskIdx, workerName === 'Otto' ? 'otto' : 'jrtech');
         gameState.ottoTasksCompleted = (gameState.ottoTasksCompleted || 0) + 1;
-        log('Otto finished: ' + gameState.taskNames[taskIdx], 'g');
+        log(`${workerName} finished: ${gameState.taskNames[taskIdx]}`, 'g');
         checkQuest('delegator');
         handleDailyTaskCompletion();
       }
@@ -3577,8 +3938,13 @@ function updateHUD() {
     storyClass = 'sb-story-win';
   }
 
+  const ts = getTimeScale();
+  const timeScaleClass = ts < 1 ? 'ts-slow' : ts > 1 ? 'ts-fast' : '';
+  const timeScaleLabel = ts < 1 ? ' ⏿' : ts > 1 ? ' ⏩' : '';
+
   const next = {
-    ht: formatTime(time.time),
+    ht: formatTime(time.time) + timeScaleLabel,
+    htCls: timeScaleClass ? `hv ${timeScaleClass}` : '',
     hd: DAYS[(time.day - 1) % 7] + ' ' + time.day,
     hs: seasonName, hsCls: seasonClass,
     hm: '$' + player.money, hmCls: moneyClass,
@@ -3603,6 +3969,7 @@ function updateHUD() {
   hudSnapshot = serial;
 
   hudEls.ht.textContent = next.ht;
+  if (next.htCls) hudEls.ht.className = next.htCls;
   hudEls.hd.textContent = next.hd;
   hudEls.hs.textContent = next.hs;
   hudEls.hs.className = next.hsCls;
@@ -3831,6 +4198,11 @@ function applyLoad(raw) {
     if (gameState.morningRoutineDone === undefined) gameState.morningRoutineDone = false;
     if (gameState.morningRoutineCount === undefined) gameState.morningRoutineCount = 0;
     if (gameState.carriedFull === undefined) gameState.carriedFull = false;
+    if (gameState.briefingShownToday === undefined) gameState.briefingShownToday = false;
+    if (gameState.visitedPostOfficeToday === undefined) gameState.visitedPostOfficeToday = false;
+    if (gameState.visitedLoungeToday === undefined) gameState.visitedLoungeToday = false;
+    if (gameState.computerDelegations === undefined) gameState.computerDelegations = 0;
+    if (gameState.allTasksBeforeNoon === undefined) gameState.allTasksBeforeNoon = false;
     if (inv.coffee_item === undefined) inv.coffee_item = 0;
     // Inject any new quests missing from old saves
     const newQuests = [
@@ -3857,6 +4229,9 @@ function applyLoad(raw) {
       { id: 'well_prepared', title: 'Well Prepared', description: 'Complete your morning routine 5 times.', type: 'side', status: 'available', goal: { type: 'morning_routine', target: 5 }, reward: { money: 20, xp: 10, rep: 0.2 }, progress: 0 },
       { id: 'pack_rat', title: 'Pack Rat', description: 'Fill your carry limit to maximum.', type: 'side', status: 'available', goal: { type: 'carry_full', target: 1 }, reward: { money: 15, xp: 10, rep: 0.1 }, progress: 0 },
       { id: 'fully_upgraded', title: 'Fully Upgraded', description: 'Upgrade both your home and factory to maximum level.', type: 'progression', status: 'available', goal: { type: 'fully_upgraded', target: 1 }, reward: { money: 120, xp: 60, rep: 1 }, progress: 0 },
+      { id: 'the_modern_manager', title: 'The Modern Manager', description: 'Successfully delegate 5 tasks using the Office Computer.', type: 'progression', status: 'available', goal: { type: 'computer_delegations', target: 5 }, reward: { money: 50, xp: 40, rep: 0.5 }, progress: 0 },
+      { id: 'town_explorer', title: 'Town Explorer', description: 'Visit both the Post Office and the Lounge in a single day.', type: 'side', status: 'available', goal: { type: 'visit_both_buildings', target: 1 }, reward: { money: 20, xp: 15, rep: 0.3 }, progress: 0 },
+      { id: 'efficiency_expert', title: 'Efficiency Expert', description: 'Complete all 3 daily tasks before 12:00 PM.', type: 'side', status: 'available', goal: { type: 'all_tasks_before_noon', target: 1 }, reward: { money: 35, xp: 30, rep: 0.4 }, progress: 0 },
     ];
     newQuests.forEach(nq => { if (!gameState.quests.find(q => q.id === nq.id)) gameState.quests.push(nq); });
     // Update NPC profiles for saves that predate expanded NPC data
@@ -3868,6 +4243,9 @@ function applyLoad(raw) {
       maya: { role: 'Librarian', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'coffee_item', perk: { description: 'Library study gives +15 bonus XP', type: 'library_bonus', value: 15 }, dialog: ['Knowledge is power.', 'Have you visited the library?', 'I saved you a good book.', "You're quite the scholar.", 'I learn something from you too.'], minTownLv: 2 },
       doc: { role: 'Town Doctor', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'coffee_item', perk: { description: 'Clinic check-up costs $5 instead of $10', type: 'clinic_discount', value: 5 }, dialog: ['Stay healthy out there.', 'How are you feeling today?', 'Looking well, I must say.', 'I keep an eye out for you.', "You're my healthiest patient."], minTownLv: 3 },
       sam: { role: 'Market Vendor', schedule: { morning: 'STREET', evening: 'STREET' }, gift: 'scrapMetal', perk: { description: 'Market bulk prices reduced by $3', type: 'market_discount', value: 3 }, dialog: ['Best deals in town!', 'Come back anytime.', "I'll set aside the good stuff.", 'Special price, just for you.', "You're my best customer."], minTownLv: 4 },
+      logi: { role: 'Logistics Specialist', schedule: { morning: 'STREET_LEFT', evening: 'STREET_LEFT' }, gift: 'coffee_item', perk: { description: 'Contract late penalties reduced by $5', type: 'contract_penalty_reduce', value: 5 }, dialog: ['Packages in, packages out.', 'On-time delivery is everything.', 'I can help cut your losses.', 'Your reputation precedes you.', "Best logistics partner I've had."] },
+      soc: { role: 'Socialite', schedule: { morning: 'STREET_RIGHT', evening: 'STREET_RIGHT' }, gift: 'bread', perk: { description: 'Gifting gives +50% extra reputation', type: 'rep_gift_boost', value: 0.5 }, dialog: ['Everyone loves a good party!', 'The buzz around town is real.', 'I can open doors for you.', 'You are the talk of the town!', "You're simply the best around."] },
+      jrtech: { role: 'Junior Tech', schedule: { morning: 'FACTORY_OFFICE', evening: 'FACTORY_OFFICE' }, gift: 'scrapMetal', perk: { description: 'Can be delegated tasks and works 50% faster than Otto', type: 'fast_worker', value: 1.5 }, dialog: ['Ready to work!', 'Just point me at a task.', "I'll get it done faster.", "Speed and accuracy — that's me.", "Best hire you've ever made."] },
     };
     gameState.npcs.forEach(n => {
       const prof = npcProfiles[n.id];
@@ -3888,10 +4266,14 @@ function applyLoad(raw) {
       { id: 'maya', name: 'MAYA', x: 108, y: 168, scene: 'STREET', spr: 'npc_maya', friendship: 0 },
       { id: 'doc', name: 'DOC CHEN', x: 176, y: 168, scene: 'STREET', spr: 'npc_doc', friendship: 0 },
       { id: 'sam', name: 'SAM', x: 232, y: 168, scene: 'STREET', spr: 'npc_sam', friendship: 0 },
+      { id: 'logi', name: 'FELIX', x: 40, y: 56, scene: 'STREET_LEFT', spr: 'npc_logi', friendship: 0 },
+      { id: 'soc', name: 'VERA', x: 60, y: 56, scene: 'STREET_RIGHT', spr: 'npc_soc', friendship: 0 },
+      { id: 'jrtech', name: 'KAI', x: 80, y: 90, scene: 'FACTORY_OFFICE', spr: 'npc_jrtech', friendship: 0 },
     ];
     missingNpcs.forEach(base => {
       if (gameState.npcs.find(n => n.id === base.id)) return;
       const prof = npcProfiles[base.id];
+      if (!prof) { gameState.npcs.push(base); return; }
       gameState.npcs.push({ ...base, role: prof.role, schedule: prof.schedule, gift: prof.gift, perk: prof.perk, dialog: prof.dialog, minTownLv: prof.minTownLv });
     });
     const factoryLoadMaxX = getFactorySplitX() - 10;
@@ -3953,6 +4335,9 @@ function checkQuest(questId) {
   else if (q.goal.type === 'morning_routine') progress = gameState.morningRoutineCount || 0;
   else if (q.goal.type === 'carry_full') progress = gameState.carriedFull ? 1 : 0;
   else if (q.goal.type === 'fully_upgraded') progress = (gameState.homeLv >= 4 && gameState.factoryLv >= 5) ? 1 : 0;
+  else if (q.goal.type === 'computer_delegations') progress = gameState.computerDelegations || 0;
+  else if (q.goal.type === 'visit_both_buildings') progress = (gameState.visitedPostOfficeToday && gameState.visitedLoungeToday) ? 1 : 0;
+  else if (q.goal.type === 'all_tasks_before_noon') progress = gameState.allTasksBeforeNoon ? 1 : 0;
   q.progress = progress;
   if (progress >= q.goal.target) completeQuest(q);
 }
